@@ -53,6 +53,71 @@ test('pane-less record with env → reopened with structured environment', async
   assert.equal(windows[0].command.env.CLAUDE_CONFIG_DIR, '/tmp/sandbox/.claude');
 });
 
+test('T3-owned Codex session resumes in place without opening a rival CLI pane', async () => {
+  const rec = seed({
+    pane: null, agent: 'codex', origin: 't3code_desktop',
+    sessionId: '00000000-0000-4000-8000-00000000c0de',
+  });
+  let opened = 0;
+  let wake;
+  const mux = {
+    paneAlive: async () => false,
+    newWindow: async () => { opened += 1; },
+  };
+  const result = await dispatchOne(rec, {
+    mux,
+    t3Wake: async (record, message, options) => {
+      wake = { record, message };
+      assert.equal(options.beforeSend('t3-thread-id'), true);
+      return { handled: true, threadId: 't3-thread-id', result: { sequence: 7 } };
+    },
+  });
+  assert.equal(result, 'already-resumed');
+  assert.equal(opened, 0);
+  assert.equal(wake.record.sessionId, rec.sessionId);
+  assert.match(wake.message, /Continue where you left off/);
+  const saved = readState().sessions[rec.key];
+  assert.equal(saved.status, 'resumed');
+  assert.equal(saved.t3ThreadId, 't3-thread-id');
+});
+
+test('T3 API failure releases the claimed stop and does not open a rival CLI pane', async () => {
+  const rec = seed({
+    pane: null, agent: 'codex', origin: 't3code_desktop',
+    sessionId: '00000000-0000-4000-8000-00000000fade',
+  });
+  let opened = 0;
+  const result = await dispatchOne(rec, {
+    mux: { paneAlive: async () => false, newWindow: async () => { opened += 1; } },
+    t3Wake: async (_record, _message, options) => {
+      assert.equal(options.beforeSend('t3-thread-id'), true);
+      throw new Error('connection lost');
+    },
+  });
+  assert.equal(result, 'retry');
+  assert.equal(opened, 0);
+  const saved = readState().sessions[rec.key];
+  assert.equal(saved.status, 'stopped');
+  assert.match(saved.lastError, /connection lost/);
+});
+
+test('T3-owned session without API access waits instead of opening a rival CLI pane', async () => {
+  const rec = seed({
+    pane: null, agent: 'codex', origin: 't3code_desktop',
+    sessionId: '00000000-0000-4000-8000-00000000beef',
+  });
+  let opened = 0;
+  const result = await dispatchOne(rec, {
+    mux: { paneAlive: async () => false, newWindow: async () => { opened += 1; } },
+    t3Wake: async () => ({
+      handled: false, locked: true, reason: 'run unsnooze t3 setup',
+    }),
+  });
+  assert.equal(result, 'retry');
+  assert.equal(opened, 0);
+  assert.equal(readState().sessions[rec.key].status, 'stopped');
+});
+
 test('reopen environment contains only record env and unsnooze control vars', async () => {
   process.env.SECRET_API_KEY = 'must-not-leak';
   process.env.UNRELATED_DAEMON_SETTING = 'must-not-leak-either';

@@ -32,6 +32,7 @@ import { makeLogger } from './logger.js';
 import { createLeaseId, leaseMatches, paneOwnedByRecord } from './lease.js';
 import { autoReapIfEnabled, attachHint } from './reap.js';
 import { tickUsageWarnings } from './usage.js';
+import { sendT3Wake } from './t3.js';
 
 const log = makeLogger('resumer');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -599,6 +600,7 @@ export async function dispatchOne(rec, {
   mux = resolveRecordMux(rec), resolveMux = null,
   resumeMessage, selfCmd = selfCommand(), fingerprint = workspaceFingerprint,
   notifier = notify, matchesLease = leaseMatches, contextTokens = null,
+  t3Wake = sendT3Wake,
 } = {}) {
   resolveMux ||= () => mux;
   const key = rec.key;
@@ -663,6 +665,47 @@ export async function dispatchOne(rec, {
   };
   const reopenGuarded = () =>
     reopen(rec, { mux, resolveMux, agent, resumeMessage, selfCmd, onDelivered: notifyContext });
+
+  // A T3-owned Codex rollout already has a live app-server client. Opening it
+  // through `codex resume` creates a rival client and Codex refuses with
+  // "conversation is open in another app". Ask T3 to start the turn through
+  // its own orchestration API before considering any pane/reopen path.
+  if (getConfig('t3Integration') && rec.origin === 't3code_desktop' && agent.id === 'codex') {
+    try {
+      const delivered = await t3Wake(rec, resumeMessage, {
+        beforeSend: threadId => claimStopForResume(rec),
+      });
+      if (delivered.handled) {
+        if (delivered.stale) return 'stale';
+        if (!transitionStopEpisode(rec, 'resumed', {
+          lastError: null, verifyRetries: 0, resumeEpisodeAt: null,
+          resumedBy: 'unsnooze', t3ThreadId: delivered.threadId,
+        }, { expect: ['resuming'] })) return 'stale';
+        log(`${key}: resumed in place through T3 Code thread ${delivered.threadId}`);
+        notifyContext();
+        notifier('unsnoozed ✅', `${rec.cwd} is running again in T3 Code`, { context: ctxOf(rec) });
+        return 'already-resumed';
+      }
+      if (delivered.locked) {
+        if (!transitionStopEpisode(rec, 'stopped', {
+          lastError: delivered.reason, verifyRetries: 0, resumeEpisodeAt: null,
+        }, { expect: ['stopped'] })) return 'stale';
+        log(`${key}: T3 Code owns this session but in-place resume is unavailable (${delivered.reason})`);
+        return 'retry';
+      }
+      log(`${key}: T3 Code in-place resume unavailable (${delivered.reason}) — using CLI fallback`);
+    } catch (error) {
+      // Once the stop has been claimed, an API failure must release it so the
+      // normal retry policy can try again. Do not open a rival CLI client: a
+      // configured T3 endpoint failing transiently does not remove T3's lock.
+      transitionStopEpisode(rec, 'stopped', {
+        lastError: `T3 Code resume: ${error.message}`,
+        verifyRetries: 0, resumeEpisodeAt: null,
+      }, { expect: ['stopped', 'resuming'] });
+      log(`${key}: T3 Code in-place resume failed: ${error.message}`);
+      return 'retry';
+    }
+  }
 
   // Live-pane path: classification comes from the shared assessPane (planFor
   // narrates the identical assessment); dispatch owns every side effect.

@@ -107,6 +107,9 @@ risks, and vulnerability reporting: **[SECURITY.md](SECURITY.md)**.
   source, parses `try again at 3:51 PM` / `Feb 23rd, 2026 9:01 PM` /
   `in 4 days 20 hours 9 minutes`. Dead sessions revive via
   `codex resume <id> "<message>"` — the prompt travels in argv.
+  Codex sessions owned by **T3 Code** resume through T3's orchestration API, so
+  they can wake in place while the thread remains open in T3. Run `unsnooze t3
+  setup` once while T3 is running.
 - **Grok Build (xAI)** — ⚠️ *experimental*. Hook channel works (Grok reads
   Claude-compatible hooks, including `StopFailure`); the limit banner text is
   not publicly documented, so detection uses generic patterns with a safe
@@ -372,6 +375,8 @@ unsnooze prompt remove <id>            # cancel a queued prompt
 unsnooze prompt clear                  # cancel all pending queued prompts
 unsnooze config list                   # settings (see below)
 unsnooze config set <k> <v>            # e.g. autoResume off
+unsnooze t3 setup                       # allow in-place wakes for T3-owned Codex threads
+unsnooze t3 status                      # check the T3 server and saved access
 unsnooze logs [-f]                     # what unsnooze has been doing
 unsnooze update                        # update unsnooze itself
 unsnooze daemon                        # persistent GUI-session watcher (usually run
@@ -579,6 +584,7 @@ password hosts on Windows; a plain `ssh <host>` prompt works with native
 | `notifications` | `true` | Master switch for all notifications (limit detected / session resumed / gave up). Off = silence every channel. |
 | `notifyChannel` | `auto` | How to deliver: `auto`, `native`, `osc`, or `bell` (see [Notification channels](#notification-channels)). Env: `UNSNOOZE_NOTIFY_CHANNEL`. |
 | `guiWatch` | `true` | May the daemon watch session files for GUI-surface stops (VS Code extension, desktop apps)? Needs the daemon running (`unsnooze install --daemon`). |
+| `t3Integration` | `true` | Resume T3-owned Codex threads through the T3 orchestration API instead of opening a competing `codex resume` client. Configure once with `unsnooze t3 setup`. Env: `UNSNOOZE_T3_INTEGRATION`. |
 | `resumeMessage` | *"Continue where you left off…"* | The message sent to wake a session. Override it for a single session with `unsnooze message <id> "…"` — visible in `unsnooze status`. |
 | `resumeMessages.claude` / `.codex` / `.grok` / `.qwen` / `.kimi` / `.opencode` / `.agy` / `.cursor` | `""` | Per-agent override of `resumeMessage`. Empty = use the global message; clear one with `unsnooze config set resumeMessages.claude ""`. |
 | `resumeExtraArgs.claude` / `.codex` / `.grok` / `.qwen` / `.kimi` / `.opencode` / `.agy` / `.cursor` | `""` | Extra flags for launches unsnooze performs itself. A revival spawns the agent binary directly, so flags you normally get from a shell alias or wrapper (`--dangerously-skip-permissions`, `--model …`) do not apply unless you put them here. Quoting is respected: `--append-system-prompt "stay in this repo"` is two arguments, not five. `config.json` may also hold an array (`["--append-system-prompt", "stay in this repo"]`), which skips parsing entirely. |
