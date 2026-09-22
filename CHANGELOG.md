@@ -1,5 +1,134 @@
 # Changelog
 
+## 1.19.1 — 2026-09-21
+
+A Codex usage reading that was averaged down, a headless Codex revival
+that could never have worked — reported as a success — and Codex stops that
+were never seen at all behind a proxy or in a reverted thread.
+
+### `unsnooze usage` reports Codex's exact percentage as read
+
+The 64% in [issue #20](https://github.com/saaranshM/unsnooze/issues/20) was
+`(29 + 99) / 2`: a jump of more than 15 points was averaged with the reading
+before it and still labelled `exact`. The averaging was meant to soften a
+one-tick spike, but at the moment a session is blocked no further reading
+arrives, so the low number stayed for the rest of the window — and 64 is
+below the 80/95 warning thresholds, so the usage-wall notification never
+fired. Codex's `used_percent` is the server's own number and is now shown
+unchanged (still clamped to 0–100).
+
+Two things could put a much lower reading in front of the latest one: Codex
+writes one snapshot per rate-limit bucket per response, and `unsnooze usage`
+read every bucket (`premium`, `codex_other`, …) as the account window; and
+Codex Desktop tabs and sub-agents each write their own rollout, so "the
+previous reading" could be another thread's minutes-old snapshot. Only the
+account bucket feeds the 5h/weekly lines now, and burn is measured between
+readings of the same rollout. Thanks to
+[@mio-tsuki](https://github.com/mio-tsuki) for working out the arithmetic.
+
+### Headless Codex revivals run, and a revival that dies says so
+
+[Issue #25](https://github.com/saaranshM/unsnooze/issues/25): on Windows the
+daemon's Scheduled Task could not find `codex`, every revival died with
+`spawn codex ENOENT`, and unsnooze logged `verified resumed` anyway.
+
+- **`codex exec resume`.** Under the headless backend a revival ran the Codex
+  TUI, which exits before touching the session when stdin is not a terminal —
+  on every OS, since the backend shipped in 1.16.0. Headless Codex revivals
+  now run `codex exec resume <id> "<prompt>"`, which continues the same
+  conversation non-interactively, the way Claude's headless revival already
+  passed its prompt in argv. It is given `--skip-git-repo-check`: `exec`
+  refuses any directory that is not a git repository, which the TUI never
+  did, and the session being revived already ran there. `resumeExtraArgs.codex`
+  goes right after `exec`, where `-s`, `-p` and `--add-dir` parse; after
+  `resume` they were rejected outright.
+- **A dead revival is a failed attempt.** With no pane to capture, an empty
+  capture used to count as a cleared banner. The headless backend now records
+  each revival's exit, and a non-zero one puts the stop back on the ledger
+  with backoff and a `last error` that carries the child's own words — visible
+  in `unsnooze status`, and kept when unsnooze finally gives up on the session.
+  A revival still running at the 20-second check is watched for up to two
+  minutes before it counts as resumed, long enough to catch the failures that
+  take a while (an auth refresh giving up, a retry loop); exit 0 counts as
+  resumed. A revival started by a resumer the Claude hook spawned no longer
+  inherits Claude's nested-launch marker, which had made it drop
+  `launchExtraArgs` and fail with a bare "exit 1".
+- **A revival into a deleted directory no longer takes the daemon down.** When
+  a session's directory was gone (a removed worktree, say), the headless
+  launch failed with an error nothing was listening for, and the daemon
+  crashed. It is now an ordinary failed attempt that names the reason.
+- **`unsnooze preview` shows the headless command.** It described a typed
+  resume and the Codex TUI for sessions that dispatch revives through argv
+  and `codex exec resume`.
+- **Windows finds the Codex runtime.** The Desktop/Store install keeps
+  `codex.exe` under a versioned directory that changes on update, and a daemon
+  started at logon keeps the PATH it was born with. Codex is now resolved at
+  launch: `UNSNOOZE_CODEX_BIN`, then `codex.exe` on PATH, then the newest
+  runtime under `%LOCALAPPDATA%\OpenAI\Codex\bin`. A `.cmd`/`.bat` shim
+  cannot be launched directly by Node; the launcher now says so and names the
+  variable to point at the `.exe` instead of failing with `EINVAL`.
+- **`unsnooze doctor` names each agent's binary** as the launcher would resolve
+  it, and reports an agent that cannot be launched as a health problem — on
+  Windows with the note that the daemon's environment can lag the shell's and
+  how to refresh it. Only for agents that have run on the machine: Claude and
+  Codex are both on by default, and a Claude-only machine is not unhealthy for
+  having no `codex`. The lookup follows spawn's own Windows rules: an `.exe`
+  anywhere on PATH wins over an npm shim earlier on it, quoted PATH entries
+  count, and a path given without its extension finds the `.exe`.
+- **Codex stops bind to the right reset.** A `rate_limit_reached` at a reported
+  99.x% was scheduled for the *weekly* reset (the latest one), days out; it now
+  binds the window nearest exhaustion. A workspace wall — credits depleted or
+  a spend cap, with no window spent — has no reset to wait for: it is announced
+  as needing you rather than "resumes when the limit resets", probed, and then
+  held with the remedy (add credits or raise the cap, then continue the
+  session in Codex) instead of a blind wake. A spent window (99% or more)
+  still governs when a workspace reason rides along, since its reset is what
+  brings the plan allowance back. `unsnooze status --json` shows the reason as
+  `limitReason`.
+- **A weaker reading no longer undoes an exact reset.** A re-detected stop
+  whose only evidence is a banner ("Try again later.") used to replace the
+  exact reset the rollout snapshot had given, turning a known wake into a
+  15-minute probe; the stronger schedule now stands until it passes, the rule
+  pane detection already followed. `unsnooze usage` in the dashboard also
+  stops reading Codex burn as idle whenever the daemon is running.
+
+The Windows resolution follows the layout in the report and wants a Windows
+run before it is trusted; continuing an open Codex Desktop thread in place
+(`codex queue`) is a separate follow-up. Thanks to
+[@nwn900](https://github.com/nwn900) for the precise report.
+
+### Codex stops behind a proxy, and in reverted threads
+
+[Issue #27](https://github.com/saaranshM/unsnooze/issues/27) found two ways
+a Codex desktop-app or IDE session went untracked:
+
+- **Reverted threads are watched.** An edited, regenerated or `/undo`-ed
+  thread continues in `rollout-<ts>-<thread id>_<rollout id>.jsonl`, a name
+  the rollout watcher never opened. Those files are now watched, counted by
+  `unsnooze usage`, and resumed by the stable thread id.
+- **A stop recorded only as an error is a stop.** Behind an OpenAI-compatible
+  proxy the rate-limit headers never reach Codex, every snapshot has empty
+  windows, and no stop was ever detected. Since codex-cli 0.145 the failed
+  turn's `task_complete` carries the limit error itself; unsnooze now reads
+  it and dates it from the banner the way a scraped pane is dated ("Try again
+  later." is probed). When the same turn also wrote an exhausted snapshot,
+  its exact reset still wins, and a workspace wall — in the snapshot or in
+  the banner's own words — stays a wall. Only the banner counts: Codex marks
+  billing and plan errors ("Quota exceeded…", "upgrade to Plus…") with the
+  same `usage_limit_exceeded` code, and those are not stops, nor is a bare 429,
+  which carries no reset time.
+- **Codex's current banner is recognized.** Codex now writes "You’ve hit your
+  usage limit" with a typographic apostrophe; the anchor accepts both, in
+  rollouts and in panes.
+- **A reset in the banner's own minute is not tomorrow.** Codex prints the
+  reset time without seconds, so a limit hit at 7:36:15 that resets at
+  7:36:40 says "try again at 7:36 AM" — which was read as 7:36 the next
+  morning, a day late. It now wakes at 7:37.
+
+Thanks to [@d-jiao](https://github.com/d-jiao) for the report, the fix in
+[PR #28](https://github.com/saaranshM/unsnooze/pull/28), and checking it
+against 523 real rollouts.
+
 ## 1.19.0 — 2026-09-10
 
 Fish shell support, direct help/version commands, and a fix for Codex sessions

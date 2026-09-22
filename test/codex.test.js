@@ -3,7 +3,7 @@
 // that changes them should fail here, loudly.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import codex from '../src/agents/codex.js';
+import codex, { ROLLOUT_RE } from '../src/agents/codex.js';
 import { getAgent } from '../src/agents/index.js';
 import { detectLimit, isBusy, overloadMatch } from '../src/patterns.js';
 import { parseResetTime, resetAtMs } from '../src/time-parser.js';
@@ -23,6 +23,7 @@ const VARIANTS = [
   "■ You've hit your usage limit. Try again later.",
   "■ You've hit your usage limit for gpt-5-codex. Switch to another model now, or try again at 4:10 PM.",
   "You've hit your usage limit. Try again in 4 days 20 hours 9 minutes.",
+  "You’ve hit your usage limit. To get more access now, send a request to your admin or try again at 7:36 AM.",   // curly apostrophe, from the desktop app
 ];
 
 for (const banner of VARIANTS) {
@@ -52,6 +53,23 @@ test('busy and idle markers', () => {
   assert.equal(codex.patterns.idleRegex.test(idle), true);
 });
 
+// --- rollout filenames ---
+
+test('ROLLOUT_RE captures the thread id from plain and reverted-thread filenames', () => {
+  const thread = '01a0bcf8-f716-7ac3-b90b-5a2cede549a1';
+  const rollout = '01a0c026-7b2f-74c3-b576-76743e1da8d7';
+  assert.equal(`rollout-2026-09-20T00-00-27-${thread}.jsonl`.match(ROLLOUT_RE)?.[1], thread);
+  // codex-rs/rollout/src/rollout_file_name.rs: a reverted thread continues in
+  // "rollout-<ts>-<thread id>_<rollout id>.jsonl". The stable thread id is
+  // what `codex resume` takes — never the rollout id after the underscore.
+  assert.equal(`rollout-2026-09-20T14-49-02-${thread}_${rollout}.jsonl`.match(ROLLOUT_RE)?.[1], thread);
+  for (const name of [
+    `rollout-2026-09-20T14-49-02-${thread}_junk.jsonl`,
+    `rollout-2026-09-20T00-00-27-${thread}.jsonl.zst`,   // compressed archive, never appended
+    'notes.jsonl',
+  ]) assert.equal(ROLLOUT_RE.test(name), false, name);
+});
+
 // --- resume invocation ---
 
 test('codex resume args carry the message in argv', () => {
@@ -60,6 +78,24 @@ test('codex resume args carry the message in argv', () => {
   assert.equal(withId.messageViaPane, false);
   const noId = codex.resumeArgs(null, 'continue');
   assert.deepEqual(noId.args, ['resume', '--last', 'continue']);
+});
+
+// #25: the TUI exits 1 ("stdin is not a terminal") under the headless backend,
+// which then read the empty capture as a clean resume. Headless takes the
+// non-interactive subcommand; a real pane keeps the TUI form untouched.
+test('codex resumes headless through `exec resume`, never the TUI', () => {
+  const id = '0199a213-81c0-7800-8aa1-bbab2a035a53';
+  assert.deepEqual(codex.resumeArgs(id, 'continue', { canType: false }).args,
+    ['exec', '--skip-git-repo-check', 'resume', id, 'continue']);
+  assert.deepEqual(codex.resumeArgs(null, 'continue', { canType: false }).args,
+    ['exec', '--skip-git-repo-check', 'resume', '--last', 'continue']);
+  assert.deepEqual(codex.resumeArgs(id, 'continue', { canType: true }).args,
+    ['resume', id, 'continue']);
+  assert.equal(codex.resumeArgs(id, 'continue', { canType: false }).messageViaPane, false);
+  // `exec` exits 1 outside a git repository ("Not inside a trusted directory
+  // and --skip-git-repo-check was not specified") — the TUI form never did.
+  assert.ok(codex.resumeArgs(id, 'continue', { canType: false }).args.includes('--skip-git-repo-check'));
+  assert.ok(!codex.resumeArgs(id, 'continue', { canType: true }).args.includes('--skip-git-repo-check'));
 });
 
 test('codex foreground command check', () => {
@@ -99,12 +135,68 @@ test('"Try again later." yields no parse (fallback path)', () => {
 
 test('codex bin resolution falls back to the ChatGPT app bundle', async () => {
   const { resolveCodexBin, CHATGPT_CODEX_BIN } = await import('../src/agents/codex.js');
+  // The bundle is a macOS thing; pin the platform so the Windows runner does
+  // not take its own branch here.
+  const mac = opts => resolveCodexBin({ platform: 'darwin', ...opts });
   // env override always wins
-  assert.equal(resolveCodexBin({ env: { UNSNOOZE_CODEX_BIN: '/x/codex' }, onPath: () => true, exists: () => true }), '/x/codex');
+  assert.equal(mac({ env: { UNSNOOZE_CODEX_BIN: '/x/codex' }, onPath: () => true, exists: () => true }), '/x/codex');
   // codex on PATH → plain name (standalone CLI installs)
-  assert.equal(resolveCodexBin({ env: {}, onPath: () => true, exists: () => false }), 'codex');
+  assert.equal(mac({ env: {}, onPath: () => true, exists: () => false }), 'codex');
   // not on PATH but the unified ChatGPT app is installed → bundled binary
-  assert.equal(resolveCodexBin({ env: {}, onPath: () => false, exists: p => p === CHATGPT_CODEX_BIN }), CHATGPT_CODEX_BIN);
+  assert.equal(mac({ env: {}, onPath: () => false, exists: p => p === CHATGPT_CODEX_BIN }), CHATGPT_CODEX_BIN);
   // neither → plain name so the launcher can degrade gracefully
-  assert.equal(resolveCodexBin({ env: {}, onPath: () => false, exists: () => false }), 'codex');
+  assert.equal(mac({ env: {}, onPath: () => false, exists: () => false }), 'codex');
+  // Explicitly non-win32: the platform decides the search, not the host.
+  assert.equal(resolveCodexBin({ env: { PATH: '/opt/bin:/usr/bin' }, platform: 'linux', exists: p => p === '/usr/bin/codex' }), 'codex');
+});
+
+// --- Windows (#25): PATH is ';'-separated, the CLI is codex.exe, and the
+// Desktop/Store install keeps it under a versioned runtime directory that a
+// daemon's logon-time PATH stops describing after the first update. ---
+
+test('windows codex resolution: exe on PATH, then the newest bundled runtime, then a shim by full path', async () => {
+  const { resolveCodexBin } = await import('../src/agents/codex.js');
+  const win = (files, extra = {}) => resolveCodexBin({
+    platform: 'win32',
+    env: { PATH: 'C:\\Users\\me\\AppData\\Local\\OpenAI\\Codex\\bin\\old-hash;C:\\Program Files\\nodejs;C:\\Users\\me\\AppData\\Roaming\\npm', ...extra },
+    exists: p => files.includes(p),
+    bundled: () => extra.runtime ?? null,
+  });
+  // A ':' split of that PATH finds nothing; a ';' split finds the exe → bare name (spawn resolves .exe itself).
+  assert.equal(win(['C:\\Program Files\\nodejs\\codex.exe'], { runtime: 'C:\\x\\codex.exe' }), 'codex',
+    'a live exe on PATH must be found before the bundled runtime is consulted');
+  // The PATH entry is a dead runtime dir → the newest live runtime, by full path.
+  assert.equal(win([], { runtime: 'C:\\Users\\me\\AppData\\Local\\OpenAI\\Codex\\bin\\new-hash\\codex.exe' }),
+    'C:\\Users\\me\\AppData\\Local\\OpenAI\\Codex\\bin\\new-hash\\codex.exe');
+  // Only an npm .cmd shim: named in full, so the launcher's refusal says which file.
+  assert.equal(win(['C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd']),
+    'C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd');
+  // A live exe on PATH beats the bundled runtime; the env override beats everything.
+  assert.equal(win(['C:\\Program Files\\nodejs\\codex.exe'], { runtime: 'C:\\x\\codex.exe' }), 'codex');
+  assert.equal(win([], { UNSNOOZE_CODEX_BIN: 'D:\\tools\\codex.exe', runtime: 'C:\\x\\codex.exe' }), 'D:\\tools\\codex.exe');
+  assert.equal(win([]), 'codex');
+});
+
+test('windowsBundledCodex picks the newest <hash>/codex.exe under the Desktop install', async () => {
+  const { windowsBundledCodex } = await import('../src/agents/codex.js');
+  const { mkdtempSync, mkdirSync, writeFileSync, utimesSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const local = mkdtempSync(join(tmpdir(), 'unsnooze-localappdata-'));
+  try {
+    const bin = join(local, 'OpenAI', 'Codex', 'bin');
+    for (const [hash, ageMin] of [['aaaa1111', 60], ['bbbb2222', 5], ['cccc3333', 30]]) {
+      mkdirSync(join(bin, hash), { recursive: true });
+      writeFileSync(join(bin, hash, 'codex.exe'), '');
+      const t = new Date(Date.now() - ageMin * 60_000);
+      utimesSync(join(bin, hash, 'codex.exe'), t, t);
+    }
+    mkdirSync(join(bin, 'empty-runtime'));          // a dir with no exe is skipped
+    writeFileSync(join(bin, 'stray-file'), '');       // as is a file at that level
+    assert.equal(windowsBundledCodex({ env: { LOCALAPPDATA: local } }), join(bin, 'bbbb2222', 'codex.exe'));
+    assert.equal(windowsBundledCodex({ env: { LOCALAPPDATA: join(local, 'nowhere') } }), null);
+    assert.equal(windowsBundledCodex({ env: {} }), null);
+  } finally {
+    rmSync(local, { recursive: true, force: true });
+  }
 });
