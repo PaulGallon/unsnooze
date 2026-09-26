@@ -1,9 +1,18 @@
 # Changelog
 
-## 1.19.2 — 2026-09-26
+## 1.19.2 — 2026-09-27
 
 Setup on Windows no longer creates a Scheduled Task. That task is what
 Microsoft Defender flagged as a Trojan.
+
+### Website redesign
+
+- The new night-shift design now covers the homepage, documentation, changelog,
+  and feedback page, with responsive layouts and reduced-motion support.
+- Release metadata refreshes every five minutes so the site follows published
+  npm versions. Failed feedback-board reads now show an error instead of
+  loading indefinitely.
+- Windows setup and troubleshooting docs describe the on-demand daemon.
 
 ### Codex wake recovery
 
