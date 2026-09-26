@@ -774,7 +774,7 @@ daemon started on demand. Install as usual and run `unsnooze doctor` to confirm.
 unsnooze registers nothing to run at sign-in on Windows — no Scheduled Task, Run
 key or Startup-folder entry. (Up to 1.19.1 it created a logon Scheduled Task,
 and Microsoft Defender flagged setup as `Trojan:Win32/Commando.A!ml` for it;
-re-running setup with GUI watching removes one left behind.)
+`unsnooze uninstall` removes one left behind.)
 Setup starts the daemon instead, and every agent you launch from PowerShell and
 every Claude Code StopFailure hook starts it again whenever it is not running,
 so after a restart it is back as soon as you use an agent. If you only use the

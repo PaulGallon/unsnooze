@@ -448,12 +448,11 @@ const ON_DEMAND_NOTE = 'While this file exists, the unsnooze daemon is started o
   + 'is registered to run at sign-in. `unsnooze uninstall` removes this file.\n';
 
 // unsnooze <= 1.19.1 registered the daemon as a logon Scheduled Task. Nothing
-// creates one now, but an install from then may still have it, and a task that
-// runs an interpreter out of %APPDATA% at every logon is exactly what the
-// Defender verdict was about. Ask before deleting, so a machine that never had
-// one — most of them: creating it needed an elevated shell — only ever sees a
-// read-only query. /f so the delete is not an interactive prompt. True when a
-// task was removed.
+// creates one now, but an install from then may still have it; uninstall
+// removes it. Ask before deleting, so a machine that never had one — most of
+// them: creating it needed an elevated shell — only ever sees a read-only
+// query. /f so the delete is not an interactive prompt. True when a task was
+// removed.
 export function removeLegacyScheduledTask({ activate = defaultActivate } = {}) {
   return activate('schtasks', ['/query', '/tn', WINDOWS_TASK_NAME])
     && activate('schtasks', ['/delete', '/f', '/tn', WINDOWS_TASK_NAME]);
@@ -744,11 +743,11 @@ export function cmdInstall(rest, { agents = enabledAgents() } = {}) {
       console.log('unsnooze: daemon started in the background — GUI sessions are watched');
       console.log('unsnooze: nothing is registered to run at sign-in (no Scheduled Task); your wrapped');
       console.log('unsnooze: agents and the Claude hook start the daemon again whenever it is not running');
-      // This is the path that used to create the task, so it is where an
-      // upgrade converges on the new arrangement.
-      if (removeLegacyScheduledTask()) {
-        console.log(`unsnooze: removed the Scheduled Task \\${WINDOWS_TASK_NAME} an earlier version created`);
-      }
+      // A task left by 1.19.1 or earlier is deliberately not looked for here:
+      // node.exe spawning schtasks.exe is the pairing Defender reacted to, and
+      // setup should spawn nothing of the kind. Such a task only starts this
+      // same daemon at sign-in, which the pidfile tolerates; uninstall removes
+      // it.
     } else if (target) console.log(`unsnooze: daemon autostart installed (${target}) — GUI sessions are watched`);
     else console.log('unsnooze: daemon autostart is not supported on this platform');
   }

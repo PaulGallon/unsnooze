@@ -40,11 +40,12 @@ If you use only the Codex app or IDE on Windows, nothing you do passes through
 a wrapper or the hook. After signing in, run `unsnooze install --daemon` (or
 launch any wrapped agent) to start the daemon.
 
-A `\unsnooze` Scheduled Task left by an earlier version is deleted when you
-re-run setup with GUI watching (or `unsnooze install --daemon`), and by
-`unsnooze uninstall`, which also removes the marker and stops the daemon.
-Both check that the task exists first, so a machine that never had one only
-ever sees a read-only query. macOS and Linux are unchanged (launchd /
+Setup does not go looking for a `\unsnooze` Scheduled Task an earlier version
+may have left: that would mean running `schtasks` again. Such a task only
+starts the same daemon at sign-in, which the pidfile tolerates.
+`unsnooze uninstall` deletes it, after checking that it exists, so a machine
+that never had one only ever sees a read-only query; uninstall also removes
+the marker and stops the daemon. macOS and Linux are unchanged (launchd /
 systemd).
 
 ## 1.19.1 — 2026-09-21
