@@ -98,10 +98,14 @@ function rolloutLimitError(line) {
 }
 
 function emptyPremium(rl) {
-  return rl.limit_id === 'premium' && rl.primary === null && rl.secondary === null
-    && rl.credits?.has_credits === false && rl.credits?.unlimited === false
-    && rl.credits?.balance != null && rl.credits.balance !== ''
-    && Number(rl.credits.balance) === 0;
+  if (!(rl.limit_id === 'premium' && rl.primary === null && rl.secondary === null
+    && rl.credits?.has_credits === false && rl.credits?.unlimited === false)) return false;
+  if (rl.credits?.balance != null && rl.credits.balance !== '') {
+    return Number(rl.credits.balance) === 0;
+  }
+  // Workspace plans (Business/Team) send the same empty bucket with no balance
+  // at all, and say why in rate_limit_reached_type instead.
+  return workspaceWall(rl.rate_limit_reached_type);
 }
 
 // rate_limit_reached_type names WHY the server refused, never a window. The
@@ -289,7 +293,11 @@ export function parseRolloutLines(lines, { path, offset } = {}) {
         // human, exactly as parseSnapshot filed it.
         error.limitType = 'model';
         error.resetLine = null;
-      } else if (error.limitType === 'unknown') {
+      } else if (error.limitType === 'unknown'
+        // A workspace-wall banner over a spent window: the snapshot already
+        // weighed the reason against the window, and the window's reset
+        // brings the allowance back. Other model limits keep their label.
+        || (error.limitType === 'model' && workspaceWall(stop.reachedType))) {
         error.limitType = stop.limitType;
       }
     }

@@ -81,6 +81,51 @@ test('99% alone, other buckets, stale context, and available credits do not infe
   assert.deepEqual(parseRolloutLines([JSON.stringify(invalidTimestamp), premium()]), []);
 });
 
+// Business/Team workspaces send the empty bucket with balance null and name
+// the reason instead. Shapes from a real Team rollout (codex-cli 0.157).
+function workspacePremium(overrides = {}, at = BLOCKED) {
+  return premium({ credits: { has_credits: false, unlimited: false, balance: null },
+    plan_type: 'business', rate_limit_reached_type: 'workspace_member_credits_depleted', ...overrides }, at);
+}
+const TEAM_BANNER = 'Your workspace is out of credits. Ask your workspace owner to refill in order to continue.';
+function taskError(message, at = BLOCKED + 500) {
+  return JSON.stringify({ timestamp: new Date(at).toISOString(), type: 'event_msg',
+    payload: { type: 'task_complete', last_agent_message: null,
+      error: { message, codex_error_info: 'usage_limit_exceeded' } } });
+}
+
+test('a workspace plan at 99% with a null-balance premium bucket records the five-hour reset', () => {
+  const hits = parseRolloutLines([normal({ plan_type: 'business' }), workspacePremium(), taskError(TEAM_BANNER)]);
+  assert.equal(hits.length, 2);
+  for (const hit of hits) {
+    assert.equal(hit.limitType, '5h', 'the window reset brings the allowance back');
+    assert.equal(hit.resetAt, RESET * 1000);
+  }
+});
+
+test('a null balance still needs a workspace reason, the 99% transition, and a live window', () => {
+  const cases = [
+    [normal(), workspacePremium({ rate_limit_reached_type: null })],
+    [normal(), workspacePremium({ rate_limit_reached_type: 'rate_limit_reached' })],
+    [normal({ primary: { used_percent: 40, window_minutes: 300, resets_at: RESET } }), workspacePremium()],
+    [normal({}, BLOCKED - 60_001), workspacePremium()],
+    [normal(), workspacePremium({ credits: { has_credits: true, unlimited: false, balance: null } })],
+  ];
+  for (const lines of cases) assert.deepEqual(parseRolloutLines(lines), [], lines.join('\n'));
+});
+
+test('a wall banner after a spent window takes that window, not an unwaitable model limit', () => {
+  const spent = normal({ primary: { used_percent: 99.5, window_minutes: 300, resets_at: RESET },
+    rate_limit_reached_type: 'workspace_member_usage_limit_reached' }, BLOCKED);
+  const hits = parseRolloutLines([spent, taskError(TEAM_BANNER)]);
+  assert.deepEqual(hits.map(h => [h.limitType, h.resetAt]), [['5h', RESET * 1000], ['5h', RESET * 1000]]);
+  // No spent window: still a wall, probed and held for a human.
+  const wall = normal({ primary: { used_percent: 40, window_minutes: 300, resets_at: RESET },
+    rate_limit_reached_type: 'workspace_member_credits_depleted' }, BLOCKED);
+  const held = parseRolloutLines([wall, taskError(TEAM_BANNER)]);
+  assert.deepEqual(held.map(h => [h.limitType, h.resetAt]), [['model', null], ['model', null]]);
+});
+
 test('an exhausted weekly window still controls the later reset', () => {
   const hits = parseRolloutLines([normal({
     secondary: { used_percent: 100, window_minutes: 10080, resets_at: RESET + 86400 },
@@ -141,4 +186,17 @@ test('context comes from the same file and never from after the batch offset', (
   assert.deepEqual(parseRolloutLines([premium()], { path: file, offset: Buffer.byteLength(meta) }), []);
   assert.deepEqual(parseRolloutLines([premium()], { path: join(DIR, 'missing'), offset: 100 }), []);
   assert.deepEqual(parseRolloutLines([premium()], { path: file, offset: 0 }), []);
+});
+
+test('a workspace-plan stop is scheduled at the exact reset, not probed as a wall', async () => {
+  const { file, meta, makeWatcher, sessionId } = setup('team');
+  writeFileSync(file, meta);
+  const watcher = makeWatcher();
+  await watcher.tick();
+  appendFileSync(file, normal({ plan_type: 'business' }) + '\n' + workspacePremium() + '\n' + taskError(TEAM_BANNER) + '\n');
+  assert.equal(await watcher.tick(), 1);
+  const record = Object.values(readState().sessions).find(s => s.sessionId === sessionId);
+  assert.equal(record.limitType, '5h');
+  assert.equal(record.resetSource, 'absolute');
+  assert.equal(record.resetAt, RESET * 1000 + RESET_MARGIN_MS);
 });
