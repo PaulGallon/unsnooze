@@ -1,5 +1,3 @@
-import Reveal from './Reveal.jsx';
-
 const ROWS = [
   ['Multi-CLI (Claude · Codex · Grok · Qwen · Kimi · OpenCode · Antigravity · Cursor)', 'yes', 'no', 'no', 'part'],
   ['GUI sessions (VS Code extension, desktop apps)', 'yes', 'no', 'no', 'no'],
@@ -14,42 +12,40 @@ const MARKS = { yes: <span className="yes">✓</span>, no: <span className="no">
 
 export default function Compare() {
   return (
-    <section id="why">
-      <Reveal>
+    <section className="poster" id="why">
+      <div className="rv">
         <p className="eyebrow">the problem</p>
-        <h2>Every other Claude Code auto-resume tool solves <span className="hl">a slice</span>.</h2>
+        <h2 className="poster-h">Every other Claude Code auto-resume tool solves <span className="hl">a slice</span>.</h2>
         <p className="section-lede">
           Overnight and long-running agent work dies at the 5-hour or weekly cap — one
           pane retried, one CLI covered, or your session abandoned for a different
           provider mid-thought. unsnooze guards all of it and always brings back
           the <em>same</em> session, same context, same conversation.
         </p>
-      </Reveal>
-      <Reveal delay={0.1}>
-        <div className="compare-scroll">
-          <table className="compare">
-            <thead>
-              <tr>
-                <th scope="col"><span className="sr-only">Capability</span></th>
-                <th scope="col" className="us">unsnooze</th>
-                <th scope="col">claude-auto-retry</th>
-                <th scope="col">autoclaude</th>
-                <th scope="col">hydra</th>
+      </div>
+      <div className="compare-scroll rv" style={{ '--d': '100ms' }}>
+        <table className="compare">
+          <thead>
+            <tr>
+              <th scope="col"><span className="sr-only">Capability</span></th>
+              <th scope="col" className="us">unsnooze</th>
+              <th scope="col">claude-auto-retry</th>
+              <th scope="col">autoclaude</th>
+              <th scope="col">hydra</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ROWS.map(([label, ...cells]) => (
+              <tr key={label}>
+                <td>{label}</td>
+                {cells.map((c, i) => (
+                  <td key={i} className={i === 0 ? 'us' : undefined}>{MARKS[c]}</td>
+                ))}
               </tr>
-            </thead>
-            <tbody>
-              {ROWS.map(([label, ...cells]) => (
-                <tr key={label}>
-                  <td>{label}</td>
-                  {cells.map((c, i) => (
-                    <td key={i} className={i === 0 ? 'us' : undefined}>{MARKS[c]}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Reveal>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

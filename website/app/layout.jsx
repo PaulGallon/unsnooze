@@ -1,5 +1,14 @@
 import './globals.css';
+import { Schibsted_Grotesk, Inter, JetBrains_Mono } from 'next/font/google';
 import { SITE_URL } from '../lib/site.js';
+import CursorFx from '../components/CursorFx.jsx';
+
+// Display: Schibsted Grotesk 800 (700 for secondary heads). Body: Inter.
+// Mono: JetBrains Mono. Exposed as CSS variables; globals.css builds the
+// --font-* stacks from them.
+const display = Schibsted_Grotesk({ subsets: ['latin'], weight: ['700', '800'], variable: '--ff-display', display: 'swap' });
+const body = Inter({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--ff-body', display: 'swap' });
+const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500', '700'], variable: '--ff-mono', display: 'swap' });
 
 export const metadata = {
   metadataBase: new URL(SITE_URL),
@@ -41,15 +50,24 @@ export const metadata = {
 };
 
 export const viewport = {
-  themeColor: '#090c10',
+  themeColor: '#050713',
   width: 'device-width',
   initialScale: 1,
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    // `js` gates the scroll reveals: set before first paint so revealed content
+    // never flashes, and absent without JS so nothing stays hidden.
+    <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('js')" }} />
+      </head>
+      <body>
+        <a className="skip" href="#main">Skip to content</a>
+        {children}
+        <CursorFx />
+      </body>
     </html>
   );
 }

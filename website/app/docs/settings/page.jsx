@@ -20,10 +20,10 @@ export const metadata = {
 export default function SettingsDocsPage() {
   return (
     <div className="subpage">
-      <div className="stars-layer stars-dim" aria-hidden="true"><Stars /></div>
+      <Stars dim />
       <JsonLd data={breadcrumbs([['unsnooze', '/'], ['Docs', '/docs/'], ['Settings', '/docs/settings/']])} />
       <SiteNav page="docs" />
-      <main className="wrap subpage-main">
+      <main className="wrap subpage-main" id="main">
         <header className="sub-hero">
           <p className="eyebrow">documentation</p>
           <h1 className="sub-title">Settings and guards</h1>
@@ -55,6 +55,7 @@ export default function SettingsDocsPage() {
                     <tr><td><C>guiWatch</C></td><td><C>true</C></td><td>May the daemon watch session files for GUI-surface stops? Needs the daemon running.</td></tr>
                     <tr><td><C>resumeMessage</C></td><td><em>"Continue where you left off…"</em></td><td>The message typed to wake a session. Override per session with <C>unsnooze message &lt;id&gt;</C>.</td></tr>
                     <tr><td><C>launchExtraArgs.&lt;agent&gt;</C></td><td><C>""</C></td><td>Extra flags for the sessions <em>you</em> start through the wrapper. For long, context-heavy runs: <C>unsnooze config set launchExtraArgs.claude "--autocompact 400000"</C> so a session compacts instead of stalling. Revivals inherit them.</td></tr>
+                    <tr><td><C>resumeExtraArgs.&lt;agent&gt;</C></td><td><C>""</C></td><td>Extra flags for launches unsnooze performs itself — dead-pane revivals and queued prompts — so a revived session matches how you normally start it (shell aliases don't apply to direct spawns). Space-separated. For headless Codex they go right after <C>exec</C>, where <C>-s</C>, <C>-p</C> and <C>--add-dir</C> parse.</td></tr>
                     <tr><td><C>resumeMessages.&lt;agent&gt;</C></td><td><C>""</C></td><td>Per-agent override of <C>resumeMessage</C> (<C>.claude</C>, <C>.codex</C>, <C>.grok</C>, <C>.qwen</C>, <C>.kimi</C>, <C>.opencode</C>, <C>.agy</C>, <C>.cursor</C>). Empty = global message.</td></tr>
                     <tr><td><C>agents.claude</C> / <C>agents.codex</C></td><td><C>true</C></td><td>Which CLIs are guarded.</td></tr>
                     <tr><td><C>agents.grok</C> … <C>agents.cursor</C></td><td><C>false</C></td><td>Experimental adapters — off by default; enable in setup or e.g. <C>config set agents.qwen on</C>.</td></tr>

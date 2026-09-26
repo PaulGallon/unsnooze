@@ -1,19 +1,6 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useReducedMotion } from 'framer-motion';
-
-export function TermWindow({ title, children, className = '', ...rest }) {
-  return (
-    <div className={`term ${className}`} {...rest}>
-      <div className="term-bar">
-        <i /><i /><i />
-        <span className="title">{title}</span>
-      </div>
-      {children}
-    </div>
-  );
-}
 
 const SCRIPT = [
   { cls: 't-cmd', text: 'claude', pause: 700 },
@@ -24,30 +11,29 @@ const SCRIPT = [
   { cls: 't-limit', text: "■ You've hit your usage limit. Try again at 3:00 AM.", pause: 500 },
   { cls: 't-us', text: 'unsnooze  recorded codex session 8c42 · waking at 3:00 am', pause: 1100 },
   { cls: 't-zzz', text: 'z z z', pause: 1800 },
-  { cls: 't-us', text: 'unsnooze  03:00 — limit reset', pause: 500 },
+  { cls: 't-us', text: 'unsnooze  03:00 — limit reset', pause: 500, dawn: true },
   { cls: 't-ok', text: '✓ claude f3a1 resumed · verified', pause: 550 },
   { cls: 't-ok', text: '✓ codex 8c42 resumed · verified', pause: 900 },
   { cls: 't-morning', text: 'good morning — the work is done.', pause: 5200 },
 ];
 
-// The detect → wait → wake cycle, typed live. Imperative DOM writes keep the
-// per-character loop out of React's render path.
+// The cinema band: the detect → wait → wake cycle, typed live, full-bleed.
+// Starts when a quarter of it is on screen; the band warms at the 03:00 line.
+// Imperative DOM writes keep the per-character loop out of React's render.
 export function LiveDemo() {
-  const bodyRef = useRef(null);
-  const reduced = useReducedMotion();
+  const section = useRef(null), body = useRef(null);
 
   useEffect(() => {
-    const demo = bodyRef.current;
-    if (!demo) return undefined;
-    demo.innerHTML = '';
-
-    if (reduced) {
+    const demo = body.current, cinema = section.current;
+    demo.textContent = '';
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
       for (const l of SCRIPT) {
         const el = document.createElement('span');
         el.className = `ln ${l.cls}`;
         el.textContent = l.text;
         demo.appendChild(el);
       }
+      cinema.classList.add('dawnlit');
       return undefined;
     }
 
@@ -55,10 +41,9 @@ export function LiveDemo() {
     cursor.className = 'cursor';
     const timers = [];
     const later = (fn, ms) => timers.push(setTimeout(fn, ms));
-
-    function typeLine(i) {
+    const typeLine = (i) => {
       if (i >= SCRIPT.length) {
-        later(() => { demo.innerHTML = ''; typeLine(0); }, 400);
+        later(() => { demo.textContent = ''; cinema.classList.remove('dawnlit'); typeLine(0); }, 400);
         return;
       }
       const l = SCRIPT[i];
@@ -66,31 +51,29 @@ export function LiveDemo() {
       el.className = `ln ${l.cls}`;
       demo.appendChild(el);
       el.appendChild(cursor);
-
-      const isTyped = l.cls === 't-cmd';
+      if (l.dawn) cinema.classList.add('dawnlit');
+      const typed = l.cls === 't-cmd';
       let pos = 0;
-      function step() {
-        if (pos < l.text.length) {
-          el.insertBefore(document.createTextNode(l.text[pos]), cursor);
-          pos += 1;
-          later(step, isTyped ? 55 : 6);
-        } else {
-          later(() => typeLine(i + 1), l.pause);
-        }
-      }
+      const step = () => {
+        if (pos < l.text.length) { el.insertBefore(document.createTextNode(l.text[pos++]), cursor); later(step, typed ? 55 : 6); }
+        else later(() => typeLine(i + 1), l.pause);
+      };
       step();
-    }
-    typeLine(0);
-
-    return () => timers.forEach(clearTimeout);
-  }, [reduced]);
+    };
+    const io = new IntersectionObserver((es) => {
+      if (es.some((e) => e.isIntersecting)) { io.disconnect(); typeLine(0); }
+    }, { threshold: 0.25 });
+    io.observe(cinema);
+    return () => { io.disconnect(); timers.forEach(clearTimeout); };
+  }, []);
 
   return (
-    <TermWindow
-      title="tmux · unsnooze"
-      aria-label="Terminal demo: unsnooze detects two limit-stopped sessions and wakes both at the reset time"
-    >
-      <div className="term-body" ref={bodyRef} />
-    </TermWindow>
+    <section className="cinema" ref={section} aria-label="Terminal demo: unsnooze detects two limit-stopped sessions and wakes both at the reset time">
+      <div className="cinema__bar"><span>tmux · unsnooze</span><span className="rec"><i className="led hot" aria-hidden="true" />one night, replayed</span></div>
+      <div className="cinema__screen">
+        <div className="cinema__glow" aria-hidden="true" />
+        <div className="cinema__body" ref={body} />
+      </div>
+    </section>
   );
 }

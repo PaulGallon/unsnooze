@@ -9,8 +9,8 @@ export default function manifest() {
       'Wakes every limit-stopped AI coding session the moment the usage limit resets.',
     start_url: '/',
     display: 'standalone',
-    background_color: '#0d1117',
-    theme_color: '#090c10',
+    background_color: '#050713',
+    theme_color: '#050713',
     icons: [
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
       { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },

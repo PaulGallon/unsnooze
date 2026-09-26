@@ -16,7 +16,7 @@ import { parseResetTime, resetAtMs } from './time-parser.js';
 import { upsertSession } from './state.js';
 import { latestRateLimitFromTranscript } from './watchers/claude.js';
 import { getMultiplexer } from './multiplexer.js';
-import { spawnResumerIfNeeded } from './spawn.js';
+import { spawnResumerIfNeeded, ensureDaemon } from './spawn.js';
 import { makeLogger } from './logger.js';
 import { addressHash } from './lease.js';
 import { prepareCalibrationSample, applyCalibrationToState } from './usage.js';
@@ -56,11 +56,15 @@ export function hookContext(env = process.env, payload = {}) {
   return { muxName, pane, paneOwner };
 }
 
-export async function runHook(rest = []) {
+export async function runHook(rest = [], { ensureDaemonFn = ensureDaemon } = {}) {
   try {
     const agentIdx = rest.indexOf('--agent');
     const agent = getAgent(agentIdx !== -1 ? rest[agentIdx + 1] : 'claude');
     if (!getConfig(`agents.${agent.id}`)) return 0;   // agent disabled in settings
+    // Nothing keeps the daemon running on native Windows (see ensureDaemon),
+    // and the hook is the one entry point GUI Claude sessions pass through —
+    // so it makes sure the daemon is up. A no-op everywhere else.
+    ensureDaemonFn();
     const raw = await readStdin();
     let payload = {};
     try { payload = JSON.parse(raw); } catch { /* tolerate non-JSON */ }

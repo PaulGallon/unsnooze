@@ -1,5 +1,8 @@
+import { fileURLToPath } from 'node:url';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  turbopack: { root: fileURLToPath(new URL('..', import.meta.url)) },
   // Keep the /docs/ style URL shapes the old site (and its inbound links) used.
   trailingSlash: true,
 

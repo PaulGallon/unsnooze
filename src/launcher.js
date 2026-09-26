@@ -8,7 +8,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { getMultiplexer } from './multiplexer.js';
 import { getAgent } from './agents/index.js';
 import { getConfig, resolveLaunchExtraArgs } from './settings.js';
-import { spawnDetached, monitorSpawnArgs } from './spawn.js';
+import { spawnDetached, monitorSpawnArgs, ensureDaemon } from './spawn.js';
 import { makeLogger } from './logger.js';
 import { createLeaseId, processBirth, writeLease, removeLease } from './lease.js';
 import { recordOwnedSession } from './mux-sessions.js';
@@ -36,6 +36,16 @@ export function resolvePaneOwner(muxName, env = process.env) {
   return null;
 }
 
+// A headless revival runs this launcher detached, with no console and no
+// terminal on any stdio. On Windows the agent would then be given a console
+// window of its own — an empty window popping up on the desktop at every
+// reset, which closing kills the revival. Hide it there. Whenever a terminal
+// is attached nothing changes: the agent, a console program, shares the
+// launcher's console, and windowsHide only affects a console Windows creates.
+export function hideAgentWindow(streams = process) {
+  return !(streams.stdin?.isTTY || streams.stdout?.isTTY || streams.stderr?.isTTY);
+}
+
 function runUnwatched(agent, args, reason) {
   if (reason) process.stderr.write(`unsnooze: ${reason}\n`);
   return runPassthrough(agent, args);
@@ -49,7 +59,9 @@ function runPassthrough(agent, args) {
   return r.status ?? 1;
 }
 
-export function runLauncher(args, agentId = 'claude', { processBirthFn = processBirth } = {}) {
+export function runLauncher(args, agentId = 'claude', {
+  processBirthFn = processBirth, ensureDaemonFn = ensureDaemon,
+} = {}) {
   const agent = getAgent(agentId);
 
   // Recursion / nested-launch guard: inside an unsnooze-managed session, a
@@ -122,6 +134,12 @@ export function runLauncher(args, agentId = 'claude', { processBirthFn = process
     }
   }
 
+  // Nothing keeps the daemon running on native Windows (see ensureDaemon), so
+  // every watched launch makes sure it is. Here, past the re-exec above, so a
+  // launch that wraps itself asks once, not twice. A no-op everywhere else,
+  // and until `install --daemon` has asked for the daemon.
+  ensureDaemonFn();
+
   const rawPane = mux.currentPaneId();
   const paneOwner = resolvePaneOwner(mux.name, process.env);
   // A backend may know it cannot safely address the pane it is sitting in —
@@ -179,7 +197,7 @@ export function runLauncher(args, agentId = 'claude', { processBirthFn = process
   // the reason, never as a crash with no exit code for the resumer to read.
   let child;
   try {
-    child = spawn(agent.bin, args, { stdio: 'inherit', env: childEnv });
+    child = spawn(agent.bin, args, { stdio: 'inherit', env: childEnv, windowsHide: hideAgentWindow() });
   } catch (err) {
     return launchFailed(agent, err);
   }

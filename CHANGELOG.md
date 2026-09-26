@@ -1,5 +1,94 @@
 # Changelog
 
+## 1.19.2 — 2026-09-27
+
+Setup on Windows no longer creates a Scheduled Task. That task is what
+Microsoft Defender flagged as a Trojan.
+
+### Website redesign
+
+- The new night-shift design now covers the homepage, documentation, changelog,
+  and feedback page, with responsive layouts and reduced-motion support.
+- Release metadata refreshes every five minutes so the site follows published
+  npm versions. Failed feedback-board reads now show an error instead of
+  loading indefinitely.
+- Windows setup and troubleshooting docs describe the on-demand daemon.
+
+### Codex wake recovery
+
+- Team/business stops with a null credits balance now retain the exhausted
+  five-hour window's reset instead of being held as a workspace credit wall.
+- If Codex consumes Enter as a pasted newline, verification retries Enter
+  up to three times while the exact wake prompt remains in the composer.
+  Each retry rechecks pane ownership and agent liveness. The old banner is
+  not re-recorded as a new stop, and the wake text is never pasted twice.
+  An unconfirmed submission is left visible for manual inspection.
+
+### No Scheduled Task on Windows
+
+A user reported that Microsoft Defender flagged `unsnooze setup` as
+`Trojan:Win32/Commando.A!ml` as it created the `\unsnooze` Scheduled Task. It
+was a false positive, but an understandable one. Setup ran
+`schtasks /create /f /sc onlogon /tr "node.exe …\AppData\Roaming\npm\…\unsnooze.js daemon"`:
+an interpreter told to run a script out of `%APPDATA%` at every logon, which is
+exactly how malware persists, and `Commando.A!ml` is Defender's
+machine-learning verdict on command lines like that one. A Run key or a
+Startup-folder entry reads the same way, so the daemon uses none of them now.
+The task rarely worked anyway: from a shell that is not elevated, `schtasks`
+refuses an `onlogon` task with "Access is denied", and setup said it was
+installed regardless.
+
+On Windows the daemon is now an ordinary background process:
+
+- **Setup starts it.** Saying yes to guarding GUI sessions (or running
+  `unsnooze install --daemon`) starts the daemon at once and records that
+  choice in `~/.unsnooze/daemon-on-demand`. Nothing is registered with Windows.
+- **It is started again on demand.** Every agent launched through the
+  PowerShell wrappers, and every Claude Code StopFailure hook, starts the
+  daemon if it is not running. After a restart it is back as soon as you use
+  an agent.
+- **One runs at a time.** The daemon keeps a heartbeat pidfile
+  (`~/.unsnooze/daemon.pid`), and a second daemon stands down at once. Once the
+  heartbeat is five minutes old the file no longer counts, whoever its pid
+  belongs to by then, so a pid Windows recycles after a sign-out cannot keep
+  the daemon from starting. A resumer lock left behind by a daemon that was
+  killed is cleared too, so it cannot stall every resume.
+- **It carries no session with it.** Started from inside a Claude Code
+  session (by the hook), it used to inherit that session's environment,
+  including `CLAUDECODE=1`, Claude Code's nested-session guard. Every Claude
+  session it revived would then have refused to start. Background processes
+  now drop the variables that mark one session; your own settings, such as
+  `CLAUDE_CONFIG_DIR` and `CLAUDE_CODE_USE_BEDROCK`, are kept. They also run in
+  your home directory, not the project that happened to start them, which
+  Windows would otherwise refuse to delete or rename until sign-out. The
+  transient resumer the hook starts gets the same treatment, on every
+  platform.
+- **No console windows.** A background daemon has no console. The `git` calls
+  it makes when a session stops and wakes, and the agent a revival starts,
+  now run hidden instead of each popping up a window of its own.
+- **Its output goes to `~/.unsnooze/daemon.log`**, as the launchd daemon's
+  does, so a crash leaves a trace.
+- **Re-running setup restarts it.** `unsnooze install --daemon` stops the
+  running daemon and starts a fresh one. That is how it picks up a new
+  version, or a `PATH` that now finds an agent, and `unsnooze doctor` now
+  says so instead of pointing at `schtasks`.
+
+If you use only the Codex app or IDE on Windows, nothing you do passes through
+a wrapper or the hook. After signing in, run `unsnooze install --daemon` (or
+launch any wrapped agent) to start the daemon.
+
+`unsnooze uninstall` removes the marker first, then stops the daemon, so
+nothing can start it again halfway through; a daemon that was only starting at
+that moment sees the marker gone and exits. It also deletes a `\unsnooze`
+Scheduled Task left by an earlier version, after checking that one exists, so
+a machine that never had one only ever sees a read-only query. If the delete
+is refused (a task created from an administrator shell can need one to
+remove), it prints the command to run. Setup does not go looking for that
+task: that would mean running `schtasks` again. A daemon such a task already
+started keeps running until you sign out; from the next sign-in the task only
+starts the same on-demand daemon, which the pidfile keeps to one. macOS and
+Linux are unchanged (launchd / systemd).
+
 ## 1.19.1 — 2026-09-21
 
 A Codex usage reading that was averaged down, a headless Codex revival

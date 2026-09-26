@@ -1,5 +1,3 @@
-import Reveal from './Reveal.jsx';
-
 const C = ({ children }) => <code className="chip">{children}</code>;
 
 // Ordered by how much of unsnooze each one lights up. headless is last and
@@ -38,30 +36,30 @@ const TERMINALS = [
 
 export default function Terminals() {
   return (
-    <section id="terminals">
-      <Reveal>
+    <section className="poster" id="terminals">
+      <div className="rv head--end">
         <p className="eyebrow">wherever you work</p>
-        <h2>Supported <span className="hl">terminals</span></h2>
+        <h2 className="poster-h">Supported <span className="hl">terminals</span></h2>
         <p className="section-lede">
           Four terminal multiplexers, on macOS, Linux and Windows — and if you have none of
           them, unsnooze still catches and resumes your limit stops.
         </p>
-      </Reveal>
+      </div>
 
-      <div className="agents-core">
-        {TERMINALS.map((t, i) => (
-          <Reveal key={t.name} delay={Math.min(i * 0.06, 0.12)} className="cell">
-            <h3>
+      <div className="roster">
+        {TERMINALS.map((t) => (
+          <div className="roster__row rv" key={t.name}>
+            <h3 className="roster__name">
               <a href={t.href} target="_blank" rel="noreferrer">{t.name}</a>
-              {t.req && <span className="tag stable">{t.req}</span>}
+              {t.req && <span className="tag">{t.req}</span>}
             </h3>
             <p>{t.body}</p>
-          </Reveal>
+          </div>
         ))}
       </div>
 
-      <Reveal>
-        <div className="exp-head">
+      <div className="exp rv">
+        <div className="exp__head">
           <span className="tag exp">no multiplexer</span>
           <span>
             With none installed, unsnooze runs <strong>headless</strong>: it reads limit stops
@@ -69,22 +67,24 @@ export default function Terminals() {
             pane, and revives into a detached process. That is what makes native Windows,
             bare servers and CI work. You give up the limit-menu answering and the live pane —
             so <C>headless</C> is only ever chosen when nothing else is there, never ahead of
-            a real multiplexer.
+            a real multiplexer. A headless revival that dies is retried with backoff, and its
+            own error shows as <C>last error</C> in <C>unsnooze status</C>.
           </span>
         </div>
-        <div className="exp-rows">
-          <div className="exp-row">
+        <div className="exp__rows">
+          <div className="exp__row">
             <code>auto</code>
-            <span>Uses the multiplexer you are already inside; failing that, the only one
-              installed, with tmux breaking ties; failing that, headless.</span>
+            <span>Uses the multiplexer you are already inside; failing that, whichever of tmux,
+              Zellij or herdr is installed (tmux breaks ties — cmux only when you are inside it
+              or pin it); failing that, headless.</span>
           </div>
-          <div className="exp-row">
+          <div className="exp__row">
             <code>pin it</code>
             <span><C>unsnooze config set multiplexer tmux|zellij|herdr|cmux|headless</C> —
               and <a href="/docs/#terminals">the full capability table</a> is in the docs.</span>
           </div>
         </div>
-      </Reveal>
+      </div>
     </section>
   );
 }

@@ -14,6 +14,7 @@ import { openSync, readSync, closeSync, readdirSync, statSync, existsSync } from
 import { join, basename } from 'node:path';
 import { CODEX_DIR } from '../config.js';
 import { findOnPath } from '../which.js';
+import { stripVTControlCharacters } from 'node:util';
 
 // Since the 2026 unified ChatGPT desktop app absorbed the Codex app, the codex
 // binary ships INSIDE the app bundle and many machines have no standalone
@@ -100,6 +101,26 @@ export const patterns = {
   overloadPatterns: [/stream error/i, /exceeded retry limit/i],
   transientPatterns: [/stream error/i, /exceeded retry limit/i],
 };
+
+// A submitted user turn uses the same › glyph as the composer. Only accept
+// the LAST prompt, followed directly by a blank line and Codex's status footer.
+// ponytail: truncated/collapsed pastes cannot be proved; leave those for the user.
+export function pendingCodexPrompt(text, message) {
+  if (!message) return false;
+  const lines = stripVTControlCharacters(text).split('\n');
+  const start = lines.findLastIndex(line => /^\s*›/.test(line));
+  if (start < 0) return false;
+  const tail = lines.slice(start + 1);
+  const footer = tail.findIndex((line, i) => i > 0 && !tail[i - 1].trim()
+    && (/\s·\s/.test(line) || /(?:\d+% context left|\? for shortcuts)/.test(line)));
+  if (footer < 0) return false;
+  if (tail.slice(footer + 1).some(line => line.trim()
+    && !/(?:\d+% context left|\? for shortcuts)/.test(line))) return false;
+  // Ignore wrapping and the extra newline swallowed by paste-burst handling.
+  const compact = value => value.replace(/\s/g, '');
+  const draft = [lines[start].replace(/^\s*›\s?/, ''), ...tail.slice(0, footer)].join('\n');
+  return compact(draft) === compact(message);
+}
 
 // Sessions live in ~/.codex/sessions/YYYY/MM/DD/rollout-{ts}-{THREAD}.jsonl;
 // the first JSONL line carries the session cwd. Conservative: no cwd match →

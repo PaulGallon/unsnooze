@@ -20,10 +20,10 @@ export const metadata = {
 export default function CommandsDocsPage() {
   return (
     <div className="subpage">
-      <div className="stars-layer stars-dim" aria-hidden="true"><Stars /></div>
+      <Stars dim />
       <JsonLd data={breadcrumbs([['unsnooze', '/'], ['Docs', '/docs/'], ['Commands', '/docs/commands/']])} />
       <SiteNav page="docs" />
-      <main className="wrap subpage-main">
+      <main className="wrap subpage-main" id="main">
         <header className="sub-hero">
           <p className="eyebrow">documentation</p>
           <h1 className="sub-title">Command reference</h1>
@@ -100,6 +100,27 @@ Usage:
                                    (--fishrc <path> overrides the fish config)
   unsnooze report [agent] [pane]   capture a pane to report an undetected banner
   unsnooze help                    show this help (also -h / --help)`}</Shell>
+
+              <h3>Scripting status</h3>
+              <p><C>unsnooze status --json</C> prints the ledger as JSON: per session the agent,
+                working directory, <C>status</C>, <C>limitType</C>, <C>resetAt</C> and its source,
+                the pane, <C>attempts</C>, and two fields worth watching.{' '}
+                <C>lastError</C> carries a failed revival's own words — a headless revival that
+                exits non-zero is retried with backoff rather than counted as resumed.{' '}
+                <C>limitReason</C> is the provider's stated reason, when it gives one (Codex's{' '}
+                <C>rate_limit_reached_type</C>, such as depleted workspace credits) — the reason
+                a stop is probed and held instead of scheduled.</p>
+
+              <h3>Install health</h3>
+              <p><C>unsnooze doctor</C> reports problems, not a checklist: wrappers and hook,
+                the daemon and whether it can reach your multiplexer, state files only you can
+                read, and the binary each agent resolves to. <C>doctor --fix</C> repairs what it
+                safely can.</p>
+
+              <h3>Claude Design</h3>
+              <p><C>unsnooze design</C> checks whether the <C>claude-design</C> MCP server is
+                registered and signed in; <C>unsnooze design setup</C> registers it, so Claude
+                Design runs watched inside Claude Code.</p>
             </section>
 
             <section className="doc-sec" id="usage">
@@ -114,7 +135,7 @@ unsnooze usage — account burn & time-to-limit  (daemon: running · warnings at
           wall    ~1h 10m at this pace · window resets 8:00 pm (absolute)
 
   codex   5h      [███░░░░░░░░░░░░░░░░░]  5% used  (exact)
-          monthly [██░░░░░░░░░░░░░░░░░░]  5% used  (exact) · resets Aug 11
+          30d     [██░░░░░░░░░░░░░░░░░░]  5% used  (exact) · resets Aug 11
           burn    idle — no active burn`}</Shell>
               <p>Every figure carries its provenance — never a bare percentage:</p>
               <ul>
