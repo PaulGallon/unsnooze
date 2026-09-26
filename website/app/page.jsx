@@ -1,4 +1,6 @@
-import HomeShell from '../components/HomeShell.jsx';
+import Celestial from '../components/Celestial.jsx';
+import SiteNav from '../components/SiteNav.jsx';
+import Reveal from '../components/Reveal.jsx';
 import Hero from '../components/Hero.jsx';
 import Compare from '../components/Compare.jsx';
 import Timeline from '../components/Timeline.jsx';
@@ -40,21 +42,26 @@ export default async function Home() {
       <JsonLd data={webSite()} />
       <JsonLd data={softwareApplication()} />
       <JsonLd data={faqPage(FAQ)} />
-      <HomeShell>
+      <Celestial />
+      <SiteNav />
+      <main id="main">
         <Hero version={latest?.version} />
-        <Compare />
-        <Timeline />
-        <Agents />
-        <Terminals />
-        <Contract />
-        <Dashboard />
-        <Usage />
-        <Prompts />
-        <Guards />
-        <Commands />
-        <Faq />
+        <div className="wrap">
+          <Compare />
+          <Timeline />
+          <Agents />
+          <Terminals />
+          <Contract />
+          <Dashboard />
+          <Usage />
+          <Prompts />
+          <Guards />
+          <Commands />
+          <Faq />
+        </div>
         <Footer />
-      </HomeShell>
+      </main>
+      <Reveal />
     </>
   );
 }

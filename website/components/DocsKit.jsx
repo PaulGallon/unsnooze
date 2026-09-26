@@ -1,12 +1,13 @@
 // Shared building blocks for the docs routes. Extracted when the single
 // /docs/ page was split so the five pages stay visually identical.
 
+// A terminal block: a mono caption bar and the output — no fake window chrome.
 export function Shell({ title = 'terminal', children }) {
   return (
-    <div className="term docs-term">
-      <div className="term-bar"><i /><i /><i /><span className="title">{title}</span></div>
-      <pre className="term-body docs-term-body">{children}</pre>
-    </div>
+    <figure className="shell">
+      <figcaption>{title}</figcaption>
+      <pre>{children}</pre>
+    </figure>
   );
 }
 

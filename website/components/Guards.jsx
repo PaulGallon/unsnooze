@@ -1,5 +1,3 @@
-import Reveal from './Reveal.jsx';
-
 const GUARDS = [
   {
     key: 'usageWarn', def: 'notify', title: 'Pre-wall warnings',
@@ -43,26 +41,26 @@ const GUARDS = [
 
 export default function Guards() {
   return (
-    <section id="guards">
-      <Reveal>
-        <p className="eyebrow">04:15 <span className="tick">·</span> the details that hold</p>
-        <h2>Guards for everything <span className="hl">that can go wrong</span> when a session resumes</h2>
+    <section className="poster" id="guards">
+      <div className="rv">
+        <p className="eyebrow"><b>04:15</b> <span className="tick">·</span> the details that hold</p>
+        <h2 className="poster-h">Guards for everything <span className="hl">that can go wrong</span> when a session resumes</h2>
         <p className="section-lede">
           Every guard is a config key — set once in <code className="chip">unsnooze setup</code>,
           change any time with <code className="chip">unsnooze config set</code>, override per
           environment with <code className="chip">UNSNOOZE_*</code> vars. Every key is listed in
           the <a href="/docs/settings/">settings and guards documentation</a>.
         </p>
-      </Reveal>
+      </div>
       <div className="guards">
-        {GUARDS.map((g, i) => (
-          <Reveal key={g.key} delay={Math.min(i * 0.04, 0.16)} className="guard">
-            <h3>
-              {g.title} <code>{g.key}</code>
-              <span className="default">default: {g.def}</span>
-            </h3>
+        {GUARDS.map((g) => (
+          <div className="guard rv" key={g.key}>
+            <div>
+              <h3>{g.title}</h3>
+              <div className="key"><code>{g.key}</code><span>default: {g.def}</span></div>
+            </div>
             <p>{g.body}</p>
-          </Reveal>
+          </div>
         ))}
       </div>
     </section>

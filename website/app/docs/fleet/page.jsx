@@ -8,7 +8,7 @@ import { JsonLd, breadcrumbs } from '../../../lib/jsonld.js';
 export const metadata = {
   title: "SSH multi-host fleet — watch sessions on every machine",
   description:
-    "Run unsnooze across several machines over ssh: host setup with key or password auth, host states, the fleet security posture, watching GUI surfaces like the VS Code extension and desktop apps, and platform support for macOS, Linux and WSL.",
+    "Run unsnooze across several machines over ssh: host setup with key or password auth, host states, the fleet security posture, watching GUI surfaces like the VS Code extension and desktop apps, and platform support for macOS, Linux and Windows (native or WSL).",
   alternates: { canonical: '/docs/fleet/' },
   openGraph: {
     title: "unsnooze ssh multi-host fleet",
@@ -20,10 +20,10 @@ export const metadata = {
 export default function FleetDocsPage() {
   return (
     <div className="subpage">
-      <div className="stars-layer stars-dim" aria-hidden="true"><Stars /></div>
+      <Stars dim />
       <JsonLd data={breadcrumbs([['unsnooze', '/'], ['Docs', '/docs/'], ['Fleet', '/docs/fleet/']])} />
       <SiteNav page="docs" />
-      <main className="wrap subpage-main">
+      <main className="wrap subpage-main" id="main">
         <header className="sub-hero">
           <p className="eyebrow">documentation</p>
           <h1 className="sub-title">SSH multi-host fleet</h1>
@@ -192,7 +192,8 @@ $ unsnooze hosts test gpu
                   revival uses the session's isolated <C>CLAUDE_CONFIG_DIR</C>.</li>
               </ul>
               <p>At reset the session revives in a multiplexer pane with{' '}
-                <C>claude --resume &lt;id&gt;</C> / <C>codex resume &lt;id&gt;</C> — same session
+                <C>claude --resume &lt;id&gt;</C> / <C>codex resume &lt;id&gt;</C> — or, headless,
+                as a detached <C>claude --resume &lt;id&gt; "…"</C> / <C>codex exec resume &lt;id&gt; "…"</C> — same session
                 file, so the conversation stays visible in the GUI's own history. Enable in{' '}
                 <C>unsnooze setup</C> or with <C>unsnooze install --daemon</C>; disable with{' '}
                 <C>unsnooze config set guiWatch off</C>.</p>
@@ -200,17 +201,25 @@ $ unsnooze hosts test gpu
 
             <section className="doc-sec" id="platforms">
               <h2>Platforms</h2>
-              <p><strong>macOS / Linux:</strong> install tmux or Zellij (<C>brew install tmux</C>,{' '}
-                <C>brew install zellij</C>). In <C>auto</C> mode unsnooze uses the multiplexer
+              <p><strong>macOS / Linux:</strong> install tmux, Zellij, herdr (≥ 0.8.0, from{' '}
+                <a href="https://herdr.dev">herdr.dev</a>) or cmux (<C>brew install tmux</C>,{' '}
+                <C>brew install zellij</C>) — or none, and unsnooze runs headless. In <C>auto</C> mode unsnooze uses the multiplexer
                 you're inside; pin one with <C>unsnooze config set multiplexer tmux</C>.</p>
-              <p><strong>Windows:</strong> unsnooze runs inside WSL — where the agent CLIs live on
-                Windows anyway:</p>
+              <p><strong>Windows:</strong> works natively — PowerShell wrappers in <C>$PROFILE</C>,
+                a cmd-safe StopFailure hook, and a daemon started on demand by wrapped agents and
+                the Claude hook. Nothing is registered at sign-in; GUI-only users run{' '}
+                <C>unsnooze install --daemon</C> after signing in. With
+                no multiplexer it runs headless; <C>unsnooze doctor</C> confirms the install and
+                names the binary each agent resolves to (pin one with <C>UNSNOOZE_CODEX_BIN</C>,{' '}
+                <C>UNSNOOZE_CLAUDE_BIN</C>, …, pointed at an <C>.exe</C>). After upgrading,
+                restart the daemon with <C>unsnooze install --daemon</C>. Stored-password fleet hosts still need
+                Git-for-Windows or WSL <C>ssh</C>.</p>
+              <p>WSL remains the richer option — that is where the Unix multiplexers live, which
+                brings back limit-menu answering and a live pane to attach to:</p>
               <Shell title="WSL (Ubuntu etc.)">{`$ sudo apt install tmux        # or install Zellij
 $ npm install -g unsnooze && unsnooze setup`}</Shell>
               <p>Desktop notifications inside WSL arrive as native Windows toasts through{' '}
-                <C>powershell.exe</C> — no X server needed. Native Windows without WSL is not
-                supported: with no tmux or Zellij there is no pane to watch, and unsnooze says so
-                and runs your CLI unwatched instead of breaking it.</p>
+                <C>powershell.exe</C> — no X server needed.</p>
             </section>
 
           </div>

@@ -258,8 +258,23 @@ export const MUX_NAMES = ['tmux', 'zellij', 'herdr', 'cmux', 'headless'];
 // Where a headless revive tees the agent's output. There is no pane to scroll
 // back through, so the log is the only record of what an unattended run did.
 export const HEADLESS_LOG_DIR = join(STATE_DIR, 'headless');
-// The daemon's Windows Task Scheduler entry (install.js creates it; doctor names it).
+// The logon Scheduled Task that unsnooze <= 1.19.1 registered for the daemon.
+// Nothing creates it any more (see DAEMON_ON_DEMAND); uninstall still removes
+// one an older install left behind.
 export const WINDOWS_TASK_NAME = 'unsnooze';
+
+// The daemon on native Windows. There is no launchd/systemd to hand it to, and
+// every way of starting a program at sign-in — a Scheduled Task, a Run key, the
+// Startup folder — is what antivirus heuristics are trained to call malware
+// persistence: Microsoft Defender flagged `schtasks /create /sc onlogon` as
+// Trojan:Win32/Commando.A!ml. So nothing is registered with Windows. This
+// marker is the whole record (install --daemon writes it), and while it exists
+// the wrappers and the StopFailure hook start the daemon whenever it is not
+// running.
+export const DAEMON_ON_DEMAND = join(STATE_DIR, 'daemon-on-demand');
+// Which daemon is running (Windows only). Its mtime is a heartbeat, so a pid
+// that Windows recycled after a crash or a sign-out is not mistaken for it.
+export const DAEMON_PIDFILE = join(STATE_DIR, 'daemon.pid');
 
 // Pane scanning
 export const PANE_SCAN_LINES = envInt('UNSNOOZE_PANE_SCAN_LINES', 12);

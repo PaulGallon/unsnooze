@@ -159,7 +159,7 @@ function Board({ rows, error }) {
 // crawlers see; after a client-side submit the board re-fetches live.
 export default function FeedbackClient({ initialRows, configured }) {
   const [rows, setRows] = useState(initialRows);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState(initialRows == null);
 
   const refresh = () => {
     listFeedback()

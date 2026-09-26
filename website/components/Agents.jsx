@@ -1,18 +1,21 @@
-import Reveal from './Reveal.jsx';
-
 const CORE = [
   {
     name: 'Claude Code', tag: 'stable',
     body: <>Dual-channel: the <code className="chip">StopFailure</code> hook (authoritative,
       carries the session id) plus pane scraping for banners and the interactive limit
       menu — always answered with “Stop and wait for limit to reset,” never a blind Enter.
-      Dead sessions revive via <code className="chip">claude --resume</code>.</>,
+      Dead sessions revive via <code className="chip">claude --resume</code>. A per-model
+      limit (<em>“You've reached your … limit”</em>) has no reset to wait for, so it is
+      tracked, probed and never typed at.</>,
   },
   {
     name: 'Codex CLI', tag: 'stable',
     body: <>Detects the exact banner strings from the Codex source and parses every reset
       format — <em>“try again at 3:51 PM,”</em> absolute dates, <em>“in 4 days 20
-      hours.”</em> Dead sessions revive via <code className="chip">codex resume</code>.</>,
+      hours.”</em> Stops behind an OpenAI-compatible proxy are read from the limit error Codex
+      writes, and a workspace wall — credits gone or a spend cap hit — is held with the
+      remedy instead of being woken into. Dead sessions revive via{' '}
+      <code className="chip">codex resume</code>.</>,
   },
   {
     name: 'GUI surfaces', tag: 'daemon', wide: true,
@@ -61,43 +64,43 @@ const EXPERIMENTAL = [
 
 export default function Agents() {
   return (
-    <section id="agents">
-      <Reveal>
+    <section className="poster" id="agents">
+      <div className="rv">
         <p className="eyebrow">who it watches</p>
-        <h2>Eight AI coding CLIs, <span className="hl">one ledger</span></h2>
+        <h2 className="poster-h">Eight AI coding CLIs, <span className="hl">one ledger</span></h2>
         <p className="section-lede">
           Terminal sessions are watched through the shell wrapper and your multiplexer;
           GUI sessions through the files they already write. One shared ledger, one daemon,
           every project at once — and across{' '}
           <a href="/docs/fleet/">every machine in your ssh fleet</a>.
         </p>
-      </Reveal>
+      </div>
 
-      <div className="agents-core">
-        {CORE.map((c, i) => (
-          <Reveal key={c.name} delay={Math.min(i * 0.06, 0.12)} className={c.wide ? 'cell wide' : 'cell'}>
-            <h3>{c.name} <span className="tag stable">{c.tag}</span></h3>
+      <div className="roster">
+        {CORE.map((c) => (
+          <div className="roster__row rv" key={c.name}>
+            <h3 className="roster__name">{c.name} <span className="tag">{c.tag}</span></h3>
             <p>{c.body}</p>
-          </Reveal>
+          </div>
         ))}
       </div>
 
-      <Reveal>
-        <div className="exp-head">
+      <div className="exp rv">
+        <div className="exp__head">
           <span className="tag exp">experimental</span>
           <span>Off by default — enable per agent in <code className="chip">unsnooze setup</code>.
             Hit a banner one missed? <code className="chip">unsnooze report</code> captures are
             how these get good.</span>
         </div>
-        <div className="exp-rows">
+        <div className="exp__rows">
           {EXPERIMENTAL.map((e) => (
-            <div className="exp-row" key={e.cmd}>
+            <div className="exp__row" key={e.cmd}>
               <code>{e.cmd}</code>
               <span>{e.desc}</span>
             </div>
           ))}
         </div>
-      </Reveal>
+      </div>
     </section>
   );
 }

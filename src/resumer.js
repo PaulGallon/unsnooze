@@ -16,6 +16,7 @@ import {
 } from './config.js';
 import { detectLimit, isBusy, modelRemedy } from './patterns.js';
 import { getAgent } from './agents/index.js';
+import { pendingCodexPrompt } from './agents/codex.js';
 import { parseResetTime, resetAtMs, nextProbeDelayMs } from './time-parser.js';
 import {
   readState, updateState, setStatus, dueSessions, activeStopped,
@@ -225,7 +226,7 @@ function paneStopOwner(rec, state = readState()) {
 // One live pane can accept one wake. Legacy/subagent detections outside the
 // short ingest-dedupe window are therefore collapsed here: the newest active
 // stop owns the target and older active records become explicit history.
-function claimStopForResume(rec) {
+function claimStopForResume(rec, pendingPrompt = null) {
   const cutoff = stopEpisodeAt(rec);
   let claimed = false;
   updateState(state => {
@@ -255,6 +256,7 @@ function claimStopForResume(rec) {
         // single point where unsnooze takes ownership of a stop, whether the
         // wake is typed, driven through the menu, or reopened.
         resumedBy: 'unsnooze',
+        pendingPrompt, submitRetries: 0,
       });
       claimed = true;
     }
@@ -756,7 +758,7 @@ export async function dispatchOne(rec, {
       // assessPane is asynchronous. Close the final human/provider-resume race
       // after assessment and immediately before the keystroke.
       if (finishIfClaudeProgressed(rec, agent)) return 'already-resumed';
-      if (!claimStopForResume(rec)) return 'stale';
+      if (!claimStopForResume(rec, agent.id === 'codex' ? resumeMessage : null)) return 'stale';
       await mux.sendText(rec.pane, resumeMessage);
       log(`${key}: sent continue via ${rec.mux} ${rec.paneOwner ?? '-'}:${rec.pane}`);
       notifyContext();
@@ -917,11 +919,11 @@ function recordVerifyRetry(rec, lastError) {
   let applied;
   if (verifyRetries >= MAX_VERIFY_RETRIES) {
     const attempts = (rec.attempts || 0) + 1;
-    applied = transitionStopEpisode(rec, 'stopped', {
+    applied = transitionStopEpisode(rec, rec.pendingPrompt ? 'failed' : 'stopped', {
       attempts,
       // Same backoff (and same manual exemption) as routed retries.
       resetAt: rec.manual ? Date.now() : Date.now() + retryBackoffMs(attempts),
-      lastError,
+      lastError: rec.pendingPrompt ? `${lastError} — wake submission unconfirmed; inspect the Codex pane` : lastError,
       verifyRetries: 0, resumeEpisodeAt: null,
     }, { expect: ['resuming'] });
   } else {
@@ -959,6 +961,29 @@ export async function verifyOne(key, { resolveMux = resolveRecordMux } = {}) {
   try { text = await mux.capturePane(rec.pane, CAPTURE_LINES); }
   catch (err) {
     return recordVerifyRetry(rec, `verify capture: ${err.message}`);
+  }
+  // A delayed TUI can process text and Enter as a single paste burst (#30).
+  // Recover only our exact draft, never type it again or treat the banner
+  // above it as a fresh refusal. Re-check the normal ownership/busy gates
+  // and the stop episode immediately before every additional Enter.
+  if (agent.id === 'codex' && pendingCodexPrompt(text, rec.pendingPrompt)) {
+    const a = await assessPane(rec, agent, { mux });
+    const current = readState().sessions[key];
+    if (!current || current.status !== 'resuming' || !samePaneTarget(current, rec)
+      || stopEpisodeAt(current) !== stopEpisodeAt(rec)) return 'stale';
+    if (a.busy) return 'pending';
+    if ((rec.submitRetries || 0) >= 3 || !a.authorized || typeof mux.sendKey !== 'function') {
+      transitionStopEpisode(rec, 'failed', {
+        lastError: 'wake prompt not submitted — inspect the Codex pane and press Enter to continue',
+      }, { expect: ['resuming'] });
+      return 'held';
+    }
+    if (!pendingCodexPrompt(a.text, rec.pendingPrompt)) return 'pending';
+    if (!transitionStopEpisode(rec, 'resuming', { submitRetries: (rec.submitRetries || 0) + 1 },
+      { expect: ['resuming'] })) return 'stale';
+    try { await mux.sendKey(rec.pane, 'Enter'); }
+    catch (err) { log(`${key}: submit retry failed: ${err.message}`); }
+    return 'pending';
   }
   const d = detectLimit(text, PANE_SCAN_LINES, agent.patterns);
   if (d.hit || (agent.menu && agent.menu.isPrompt(text, PANE_SCAN_LINES))) {

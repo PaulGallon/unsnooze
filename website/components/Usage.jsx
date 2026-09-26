@@ -1,5 +1,3 @@
-import Reveal from './Reveal.jsx';
-
 const LADDER = [
   {
     title: 'Every figure carries its provenance',
@@ -23,10 +21,10 @@ const LADDER = [
 
 export default function Usage() {
   return (
-    <section id="usage">
-      <Reveal>
-        <p className="eyebrow">20:41 <span className="tick">·</span> before the wall</p>
-        <h2>Know the 5-hour limit wall <span className="hl">before you hit it</span></h2>
+    <section className="poster" id="usage">
+      <div className="rv">
+        <p className="eyebrow"><b>20:41</b> <span className="tick">·</span> before the wall</p>
+        <h2 className="poster-h">Know the 5-hour limit wall <span className="hl">before you hit it</span></h2>
         <p className="section-lede">
           Recovery is only half the job. <code className="chip">unsnooze usage</code> forecasts
           your burn rate and time-to-limit so you can <code className="chip">/compact</code>,
@@ -35,13 +33,13 @@ export default function Usage() {
           The <a href="/docs/commands/#usage">usage forecast documentation</a> covers how each
           figure is derived.
         </p>
-      </Reveal>
-      <div className="guards">
-        {LADDER.map((n, i) => (
-          <Reveal key={n.title} delay={Math.min(i * 0.05, 0.15)} className="guard">
+      </div>
+      <div className="ladder rv">
+        {LADDER.map((n) => (
+          <div key={n.title}>
             <h3>{n.title}</h3>
             <p>{n.body}</p>
-          </Reveal>
+          </div>
         ))}
       </div>
     </section>

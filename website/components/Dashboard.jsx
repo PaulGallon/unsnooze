@@ -1,12 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import Reveal from './Reveal.jsx';
-import { TermWindow } from './Terminal.jsx';
 
 const TABS = {
   status: (
-    <pre className="term-body dash-body">
+    <pre role="tabpanel" id="dash-panel">
       <span className="d-amber">  ❯</span> <span className="d-ink">unsnooze</span> <span className="d-faint">z z z</span>{'                                          '}<span className="d-faint">daemon: running</span>{'\n\n'}
       <span className="d-ink">  claude</span>  <span className="d-faint">f3a1…</span>  ~/work/payments{'      '}<span className="d-amber">snoozed</span>{'   '}wakes 3:00 am <span className="d-faint">(in 2h 41m)</span>{'   '}<span className="d-faint">ctx ~152k tok</span>{'\n'}
       <span className="d-ink">  claude</span>  <span className="d-faint">9d07…</span>  ~/oss/unsnooze{'       '}<span className="d-green">resumed</span>{'   '}woke 8:01 pm · <span className="d-green">verified</span>{'\n'}
@@ -16,19 +14,19 @@ const TABS = {
     </pre>
   ),
   usage: (
-    <pre className="term-body dash-body">
+    <pre role="tabpanel" id="dash-panel">
       <span className="d-faint">  account burn & time-to-limit · warnings at 80,95%</span>{'\n\n'}
       <span className="d-ink">  claude</span>  5h{'      '}<span className="d-amber">[█████████████░░░░░░░]</span>  ~64%  <span className="d-faint">(calibrated from 4 stops)</span>{'\n'}
       <span className="d-dim">          burn    ~31k weighted tok/min over last 42 active min</span>{'\n'}
       <span className="d-dim">          wall    ~1h 10m at this pace · window resets 8:00 pm</span>{'\n\n'}
       <span className="d-ink">  codex</span>   5h{'      '}<span className="d-green">[███░░░░░░░░░░░░░░░░░]</span>  5% used  <span className="d-faint">(exact)</span>{'\n'}
-      <span className="d-dim">          monthly </span><span className="d-green">[██░░░░░░░░░░░░░░░░░░]</span><span className="d-dim">  5% used  (exact) · resets Aug 11</span>{'\n'}
+      <span className="d-dim">          30d     </span><span className="d-green">[██░░░░░░░░░░░░░░░░░░]</span><span className="d-dim">  5% used  (exact) · resets Aug 11</span>{'\n'}
       <span className="d-dim">          burn    idle — no active burn</span>{'\n\n'}
       <span className="d-faint">  estimates are a lower bound — exact claude % via: unsnooze usage --install-statusline</span>{'\n'}
     </pre>
   ),
   sessions: (
-    <pre className="term-body dash-body">
+    <pre role="tabpanel" id="dash-panel">
       <span className="d-faint">  unsnooze-owned multiplexer sessions</span>{'\n\n'}
       <span className="d-ink">  unsnooze</span>{'          '}<span className="d-green">attached</span>{'   '}3 panes · claude ×2, codex ×1{'\n'}
       <span className="d-ink">  unsnooze-2</span>{'        '}detached{'   '}1 pane  · claude{'\n'}
@@ -38,7 +36,7 @@ const TABS = {
     </pre>
   ),
   doctor: (
-    <pre className="term-body dash-body">
+    <pre role="tabpanel" id="dash-panel">
       <span className="d-green">  ✓</span> install is healthy.{'\n'}
       <span className="d-faint">  · resumer/daemon: running (pid 4821)</span>{'\n\n'}
       <span className="d-faint">  doctor reports problems, not a checklist — anything wrong shows as a ✗ finding</span>{'\n'}
@@ -46,7 +44,7 @@ const TABS = {
     </pre>
   ),
   logs: (
-    <pre className="term-body dash-body">
+    <pre role="tabpanel" id="dash-panel">
       <span className="d-faint">  23:58:01</span> <span className="d-rose">limit</span>{'    '}claude f3a1 hit the 5h wall · resets 3:00 am{'\n'}
       <span className="d-faint">  23:58:01</span> <span className="d-dim">ledger</span>{'   '}recorded → ~/.unsnooze/state.json{'\n'}
       <span className="d-faint">  23:58:20</span> <span className="d-rose">limit</span>{'    '}codex 8c42 hit the 5h wall · resets 3:00 AM{'\n'}
@@ -57,7 +55,7 @@ const TABS = {
     </pre>
   ),
   fleet: (
-    <pre className="term-body dash-body">
+    <pre role="tabpanel" id="dash-panel">
       <span className="d-faint">  3 hosts · R resume selected · C cancel · r refresh</span>{'\n\n'}
       <span className="d-green">  ●</span> <span className="d-ink">work</span>{'    '}<span className="d-green">online</span> <span className="d-faint">(42ms) · key</span>{'\n'}
       {'    '}<span className="d-amber">❯</span> <span className="d-rose">● STOPPED</span>{'  '}<span className="d-faint">f3a1c2d4</span>{'  '}claude{'  '}resets 3:00 am{'\n'}
@@ -68,7 +66,7 @@ const TABS = {
     </pre>
   ),
   prompts: (
-    <pre className="term-body dash-body">
+    <pre role="tabpanel" id="dash-panel">
       <span className="d-faint">  queued prompts · a add · d remove · delivered in a NEW session at the reset</span>{'\n\n'}
       <span className="d-faint">  p-3f9a1c2e</span>  <span className="d-ink">claude</span>  ~/work/payments{'   '}next reset{'  '}<span className="d-amber">pending</span>{'    '}<span className="d-dim">"run the full test suite and fix…"</span>{'\n'}
       <span className="d-faint">  p-8b20d4aa</span>  <span className="d-ink">codex</span>{'   '}~/work/ingest{'     '}at 9:00 pm{'  '}<span className="d-amber">pending</span>{'    '}<span className="d-dim">"ship the release"</span>{'\n'}
@@ -78,13 +76,15 @@ const TABS = {
   ),
 };
 
+// Client component (the tabs are stateful); still fully server-rendered on
+// first load with the status tab showing.
 export default function Dashboard() {
   const [tab, setTab] = useState('status');
   return (
-    <section id="dashboard">
-      <Reveal>
-        <p className="eyebrow">01:30 <span className="tick">·</span> if you're up anyway</p>
-        <h2>A usage-limit dashboard for <span className="hl">the small hours</span></h2>
+    <section className="poster" id="dashboard">
+      <div className="rv head--end">
+        <p className="eyebrow"><b>01:30</b> <span className="tick">·</span> if you're up anyway</p>
+        <h2 className="poster-h">A usage-limit dashboard for <span className="hl">the small hours</span></h2>
         <p className="section-lede">
           <code className="chip">unsnooze dashboard</code> is a full-screen terminal UI —
           status, usage forecast, sessions, install doctor, live logs, queued prompts, and
@@ -93,9 +93,10 @@ export default function Dashboard() {
           <code className="chip">CI</code>, and <code className="chip">--json</code> stay plain.
           Try the tabs.
         </p>
-      </Reveal>
-      <Reveal delay={0.1}>
-        <TermWindow title="unsnooze dashboard">
+      </div>
+      <div className="rv" style={{ '--d': '100ms' }}>
+        <div className="panel">
+          <div className="panel__bar"><span>unsnooze dashboard</span><span>80×24</span></div>
           <div className="dash-tabs" role="tablist" aria-label="Dashboard tabs">
             {Object.keys(TABS).map((t) => (
               <button
@@ -103,7 +104,8 @@ export default function Dashboard() {
                 type="button"
                 role="tab"
                 aria-selected={tab === t}
-                className={`dash-tab${tab === t ? ' active' : ''}`}
+                aria-controls="dash-panel"
+                className="dash-tab"
                 onClick={() => setTab(t)}
               >
                 {t}
@@ -111,12 +113,12 @@ export default function Dashboard() {
             ))}
           </div>
           {TABS[tab]}
-        </TermWindow>
+        </div>
         <p className="dash-hint">
           <b>m</b> toggles mouse mode · <b>?</b> help overlay · <b>q</b> quits — works down
           to an 80×24 terminal
         </p>
-      </Reveal>
+      </div>
     </section>
   );
 }

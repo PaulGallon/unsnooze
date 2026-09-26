@@ -21,11 +21,11 @@ export const metadata = {
 export default function DocsPage() {
   return (
     <div className="subpage">
-      <div className="stars-layer stars-dim" aria-hidden="true"><Stars /></div>
+      <Stars dim />
       <JsonLd data={breadcrumbs([['unsnooze', '/'], ['Docs', '/docs/']])} />
       <DocsHashRedirect />
       <SiteNav page="docs" />
-      <main className="wrap subpage-main">
+      <main className="wrap subpage-main" id="main">
         <header className="sub-hero">
           <p className="eyebrow">documentation</p>
           <h1 className="sub-title">Install and setup</h1>
@@ -59,8 +59,9 @@ $ unsnooze setup`}</Shell>
                 <li><strong>The Claude <C>StopFailure</C> hook</strong> — the authoritative
                   limit-stop signal, carrying the session id.</li>
                 <li><strong>Optionally the daemon</strong> (a launchd agent on macOS, a systemd user
-                  unit on Linux, a logon Scheduled Task on Windows) for GUI-surface watching and
-                  pre-wall usage warnings.</li>
+                  unit on Linux; on Windows it is started on demand by your agents, with nothing
+                  registered to run at sign-in) for GUI-surface watching and pre-wall usage
+                  warnings.</li>
                 <li><strong><C>~/.unsnooze/config.json</C></strong> with your choices —
                   see <a href="/docs/settings/#settings">Settings</a>.</li>
               </ul>
@@ -85,8 +86,9 @@ unsnooze doctor: all clear — install is healthy.
               <h2>Supported terminals</h2>
               <p>unsnooze drives four terminal multiplexers — and works without one. Pick one
                 explicitly with <C>unsnooze config set multiplexer tmux|zellij|herdr|cmux|headless</C>.
-                On <C>auto</C> it uses the multiplexer you are currently inside; failing that, the
-                only one installed (tmux breaks ties); failing that, <C>headless</C>.</p>
+                On <C>auto</C> it uses the multiplexer you are currently inside; failing that,
+                whichever of tmux, Zellij or herdr is installed (tmux breaks ties — cmux only when
+                you are inside it or pin it); failing that, <C>headless</C>.</p>
               <div className="doc-table-scroll">
                 <table className="doc-table">
                   <thead><tr>

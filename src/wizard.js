@@ -77,14 +77,18 @@ export async function runWizard() {
   });
   if (p.isCancel(notifications)) return cancelled();
 
-  // GUI watching: only meaningful where an autostart daemon can run. Windows
-  // joined that list with the Task Scheduler unit — and needs it most, since
-  // headless has no pane monitor and the transcript watcher lives in the daemon.
+  // GUI watching: only meaningful where the daemon can run. Windows needs it
+  // most, since headless has no pane monitor and the transcript watcher lives
+  // in the daemon — and there it is started on demand, with nothing registered
+  // to run at sign-in (see DAEMON_ON_DEMAND in config.js).
   let guiWatch = false;
   if (['darwin', 'linux', 'win32'].includes(process.platform)) {
+    const how = process.platform === 'win32'
+      ? 'started on demand by your agents — nothing runs at sign-in'
+      : (process.platform === 'darwin' ? 'launchd' : 'systemd');
     const answer = await p.confirm({
       message: 'Also guard GUI sessions (Claude Code in VS Code/desktop, Codex app/IDE)?\n'
-        + '  Installs a small background daemon (launchd/systemd/Task Scheduler) that watches session\n'
+        + `  Runs a small background daemon (${how}) that watches session\n`
         + '  files for limit stops; revived sessions open in the configured multiplexer and stay visible in\n'
         + '  the GUI\'s own history.',
       initialValue: DEFAULTS.guiWatch,

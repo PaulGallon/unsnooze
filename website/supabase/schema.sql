@@ -7,11 +7,11 @@
 --     Supabase dashboard (set status, or hidden = true to remove spam).
 --
 -- Wire the site to it with two build-time env vars:
---   VITE_SUPABASE_URL      = https://<project>.supabase.co
---   VITE_SUPABASE_ANON_KEY = <anon public key>
--- Locally: put them in website/.env.local. On GitHub Pages: repo
--- Settings → Secrets and variables → Actions → Variables (the deploy
--- workflow passes them into the build).
+--   NEXT_PUBLIC_SUPABASE_URL      = https://<project>.supabase.co
+--   NEXT_PUBLIC_SUPABASE_ANON_KEY = <anon public key>
+-- Locally: put them in website/.env.local. On Vercel: set them in the
+-- project's Environment Variables for the intended deployment environment,
+-- then rebuild. Only use the public anon key, never the service-role key.
 
 create table public.feedback (
   id         uuid primary key default gen_random_uuid(),

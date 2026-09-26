@@ -45,10 +45,10 @@ export default async function FeedbackPage() {
 
   return (
     <div className="subpage">
-      <div className="stars-layer stars-dim" aria-hidden="true"><Stars /></div>
+      <Stars dim />
       <JsonLd data={breadcrumbs([['unsnooze', '/'], ['Feedback', '/feedback/']])} />
       <SiteNav page="feedback" />
-      <main className="wrap subpage-main">
+      <main className="wrap subpage-main" id="main">
         <header className="sub-hero">
           <p className="eyebrow">bugs &amp; ideas</p>
           <h1 className="sub-title">Make unsnooze better</h1>

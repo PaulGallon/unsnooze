@@ -21,10 +21,10 @@ export default async function ChangelogPage() {
 
   return (
     <div className="subpage">
-      <div className="stars-layer stars-dim" aria-hidden="true"><Stars /></div>
+      <Stars dim />
       <JsonLd data={breadcrumbs([['unsnooze', '/'], ['Changelog', '/changelog/']])} />
       <SiteNav page="changelog" />
-      <main className="wrap subpage-main">
+      <main className="wrap subpage-main" id="main">
         <header className="sub-hero">
           <p className="eyebrow">release history</p>
           <h1 className="sub-title">Changelog</h1>
