@@ -223,17 +223,35 @@ async function main() {
     case 'daemon': {
       // Persistent resumer + transcript watcher: detects and revives limit
       // stops from GUI surfaces (VS Code extension, desktop apps) where no
-      // shell wrapper or multiplexer pane exists. Run via launchd/systemd or a shell.
+      // shell wrapper or multiplexer pane exists. Run via launchd/systemd, on
+      // demand on native Windows (spawn.js ensureDaemon), or from a shell.
       // Exit 0 on load failure: with launchd KeepAlive a crash here means an
       // instant-respawn crash-loop for the whole upgrade window.
       const resumerMod = await safeImport('../src/resumer.js');
       const watcherMod = await safeImport('../src/watcher.js');
-      if (!resumerMod || !watcherMod) return 0;
+      const spawnMod = await safeImport('../src/spawn.js');
+      if (!resumerMod || !watcherMod || !spawnMod) return 0;
       const { runResumer } = resumerMod;
       const { createWatcher } = watcherMod;
       const controller = new AbortController();
       process.on('SIGTERM', () => controller.abort());
       process.on('SIGINT', () => controller.abort());
+      // Native Windows has no launchd/systemd to keep this a single instance,
+      // and the wrappers and the hook can both start one at once. Claim the
+      // pidfile before doing anything else: a daemon that finds a live one
+      // already running exits here, and one that later finds itself replaced
+      // stands down.
+      let releaseDaemon = null;
+      if (process.platform === 'win32') {
+        releaseDaemon = spawnMod.claimDaemon({ onLost: () => controller.abort() });
+        if (!releaseDaemon) {
+          // Reaches a terminal only when a user ran `unsnooze daemon` by hand;
+          // an on-demand start has nowhere to print.
+          const pid = spawnMod.runningDaemonPid();
+          console.error(`unsnooze: the daemon is already running${pid ? ` (pid ${pid})` : ''} — not starting another`);
+          return 0;
+        }
+      }
       // Self-heal pre-1.12 autostart units: they lack PATH, so this daemon
       // cannot find tmux and every revival dies. Healing rewrites the unit
       // and reloads it — which intentionally kills THIS process; the
@@ -292,12 +310,14 @@ async function main() {
       }
       // Daily update check from the daemon: GUI-only users never run CLI
       // commands, so this is what gets them the "new version" desktop toast.
-      const spawnMod = await safeImport('../src/spawn.js');
-      if (!spawnMod) return 0;
       const { spawnDetached } = spawnMod;
       spawnDetached(['_update-check']);
       setInterval(() => spawnDetached(['_update-check']), 24 * 3_600_000).unref();
-      return runResumer({ persistent: true, watcher: createWatcher(), signal: controller.signal });
+      try {
+        return await runResumer({ persistent: true, watcher: createWatcher(), signal: controller.signal });
+      } finally {
+        releaseDaemon?.();
+      }
     }
     case 'help':
     case '-h':

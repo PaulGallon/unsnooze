@@ -113,9 +113,10 @@ export default function TroubleshootingDocsPage() {
                   <C>unsnooze status</C> shows its own last words as the <C>last error</C> —{' '}
                   <C>spawn codex ENOENT</C> means the daemon cannot find the agent.{' '}
                   <C>unsnooze doctor</C> prints the binary each agent resolves to. On Windows
-                  the daemon keeps the <C>PATH</C> it had at logon: set{' '}
+                  the daemon keeps the <C>PATH</C> it started with: set{' '}
                   <C>UNSNOOZE_CODEX_BIN</C> (or <C>UNSNOOZE_CLAUDE_BIN</C>, …) to the agent's{' '}
-                  <C>.exe</C>, or restart the Scheduled Task after an agent update.</li>
+                  <C>.exe</C>, or restart the daemon with <C>unsnooze install --daemon</C> after
+                  an agent update.</li>
                 <li><strong>It was recorded but never woke.</strong> A wake problem, and{' '}
                   <C>unsnooze preview &lt;id&gt;</C> names the reason rather than guessing. The
                   usual answers are a guard deliberately holding it — see{' '}

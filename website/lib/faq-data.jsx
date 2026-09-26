@@ -36,9 +36,10 @@ export const FAQ = [
   },
   {
     q: 'Does it work on Windows?',
-    text: 'Yes, natively. PowerShell wrappers go into your $PROFILE, the StopFailure hook is written in cmd syntax, and the daemon autostarts from a logon Scheduled Task. With no multiplexer installed unsnooze runs headless — it detects stops from the hook and the session transcript instead of a pane, so limits are still caught and resumed. WSL remains the richer option, since that is where tmux lives and where you get menu answering and a live pane to attach to.',
+    text: 'Yes, natively. PowerShell wrappers go into your $PROFILE, the StopFailure hook is written in cmd syntax, and the daemon is started on demand by your agents — nothing is registered to run at sign-in. With no multiplexer installed unsnooze runs headless — it detects stops from the hook and the session transcript instead of a pane, so limits are still caught and resumed. WSL remains the richer option, since that is where tmux lives and where you get menu answering and a live pane to attach to.',
     jsx: <>Yes, natively. PowerShell wrappers go into your <C>$PROFILE</C>, the StopFailure
-      hook is written in cmd syntax, and the daemon autostarts from a logon Scheduled Task.
+      hook is written in cmd syntax, and the daemon is started on demand by your agents —
+      nothing is registered to run at sign-in.
       With no multiplexer installed unsnooze runs <strong>headless</strong> — it detects
       stops from the hook and the session transcript instead of a pane, so limits are still
       caught and resumed. WSL remains the richer option, since that is where tmux lives and

@@ -59,8 +59,9 @@ $ unsnooze setup`}</Shell>
                 <li><strong>The Claude <C>StopFailure</C> hook</strong> — the authoritative
                   limit-stop signal, carrying the session id.</li>
                 <li><strong>Optionally the daemon</strong> (a launchd agent on macOS, a systemd user
-                  unit on Linux, a logon Scheduled Task on Windows) for GUI-surface watching and
-                  pre-wall usage warnings.</li>
+                  unit on Linux; on Windows it is started on demand by your agents, with nothing
+                  registered to run at sign-in) for GUI-surface watching and pre-wall usage
+                  warnings.</li>
                 <li><strong><C>~/.unsnooze/config.json</C></strong> with your choices —
                   see <a href="/docs/settings/#settings">Settings</a>.</li>
               </ul>

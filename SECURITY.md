@@ -96,6 +96,14 @@ the *same* session by typing a message (or reopening it via the agent's own
   anywhere.
 - **Never** blind-Enter a menu, and never inject into a pane it cannot prove is
   yours (it reopens a fresh session instead).
+- **Never** register anything to run at Windows sign-in — no Scheduled Task, Run
+  key, or Startup-folder entry. On Windows the optional daemon is an ordinary
+  background process that your wrapped agents and the StopFailure hook start
+  when it is not running. (Up to 1.19.1 setup created a logon Scheduled Task,
+  which Microsoft Defender flagged as `Trojan:Win32/Commando.A!ml`; see the
+  1.19.2 CHANGELOG.) On macOS and Linux the daemon is a launchd agent / systemd
+  user unit you opt into. *(src/install.js `installDaemonAutostart`,
+  src/spawn.js `ensureDaemon`)*
 
 ## Threat model & residual risks
 

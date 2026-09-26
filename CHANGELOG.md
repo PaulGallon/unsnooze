@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.19.2 — 2026-09-26
+
+Setup on Windows no longer creates a Scheduled Task. That task is what
+Microsoft Defender flagged as a Trojan.
+
+### No Scheduled Task on Windows
+
+A user reported that Microsoft Defender flagged `unsnooze setup` as
+`Trojan:Win32/Commando.A!ml` as it created the `\unsnooze` Scheduled Task. It
+was a false positive, but an understandable one. Setup ran
+`schtasks /create /f /sc onlogon /tr "node.exe …\AppData\Roaming\npm\…\unsnooze.js daemon"`:
+an interpreter told to run a script out of `%APPDATA%` at every logon, which is
+exactly how malware persists, and `Commando.A!ml` is Defender's
+machine-learning verdict on command lines like that one. A Run key or a
+Startup-folder entry reads the same way, so the daemon uses none of them now.
+The task rarely worked anyway: from a shell that is not elevated, `schtasks`
+refuses an `onlogon` task with "Access is denied", and setup said it was
+installed regardless.
+
+On Windows the daemon is now an ordinary background process:
+
+- **Setup starts it.** Saying yes to guarding GUI sessions (or running
+  `unsnooze install --daemon`) starts the daemon at once and records that
+  choice in `~/.unsnooze/daemon-on-demand`. Nothing is registered with Windows.
+- **It is started again on demand.** Every agent launched through the
+  PowerShell wrappers, and every Claude Code StopFailure hook, starts the
+  daemon if it is not running. After a restart it is back as soon as you use
+  an agent.
+- **One runs at a time.** The daemon keeps a heartbeat pidfile
+  (`~/.unsnooze/daemon.pid`). A second daemon stands down at once, and a pid
+  that Windows recycled after a sign-out is never mistaken for the daemon.
+- **Re-running setup restarts it.** `unsnooze install --daemon` stops the
+  running daemon and starts a fresh one. That is how it picks up a new
+  version, or a `PATH` that now finds an agent, and `unsnooze doctor` now
+  says so instead of pointing at `schtasks`.
+
+If you use only the Codex app or IDE on Windows, nothing you do passes through
+a wrapper or the hook. After signing in, run `unsnooze install --daemon` (or
+launch any wrapped agent) to start the daemon.
+
+A `\unsnooze` Scheduled Task left by an earlier version is deleted when you
+re-run setup with GUI watching (or `unsnooze install --daemon`), and by
+`unsnooze uninstall`, which also removes the marker and stops the daemon.
+Both check that the task exists first, so a machine that never had one only
+ever sees a read-only query. macOS and Linux are unchanged (launchd /
+systemd).
+
 ## 1.19.1 — 2026-09-21
 
 A Codex usage reading that was averaged down, a headless Codex revival

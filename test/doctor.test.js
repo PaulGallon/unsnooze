@@ -128,14 +128,16 @@ test('runDoctor flags an enabled agent whose binary cannot be launched', async (
   assert.ok(!missing.findings.some(f => f.id === 'agent-bin-grok'), 'a disabled agent is not checked');
 
   // On Windows the daemon's environment can differ from doctor's, and the
-  // finding has to say how to refresh it.
+  // finding has to say how to refresh it — without the Scheduled Task that
+  // unsnooze no longer creates.
   const win = await runDoctor({ ...base, platform: 'win32',
     env: { PATH: 'C:\\dead' }, exists: () => false,
     agents: [{ id: 'codex', bin: 'codex' }],
     rcContent: () => '', profileContent: () => '',
   });
   const winDetail = win.findings.find(f => f.id === 'agent-bin-codex').detail;
-  assert.match(winDetail, /schtasks \/end \/tn unsnooze\n\s*schtasks \/run \/tn unsnooze/);
+  assert.match(winDetail, /restart it from here with: unsnooze install --daemon/);
+  assert.doesNotMatch(winDetail, /schtasks|Scheduled Task/);
   assert.doesNotMatch(winDetail, /&&/, 'Windows PowerShell 5.1 has no &&');
 
   // A .cmd shim is found but not launchable — a different message.

@@ -92,15 +92,20 @@ test('uninstall removes the artifacts again', () => {
   assert.ok(!existsSync(join(dir2, 'unsnooze.service')));
 });
 
-test('windows autostarts through the Task Scheduler, not a unit file', () => {
+test('windows autostarts on demand, from a marker rather than a unit or a Scheduled Task', () => {
   // Was null: native Windows had no multiplexer to revive into, so there was
   // nothing for a daemon to do. headless changed that, and the daemon is where
-  // the transcript watcher lives — without autostart a Windows box catches
-  // limit stops only through the StopFailure hook.
-  assert.ok(installDaemonAutostart({ platform: 'win32', dir: DIR, activate: () => true }));
-  assert.ok(uninstallDaemonAutostart({ platform: 'win32', dir: DIR, activate: () => true }));
-  // ...and writes no unit file, since Task Scheduler holds the record itself.
-  assert.equal(autostartUnitPath({ platform: 'win32', dir: DIR }), null);
+  // the transcript watcher lives — without it a Windows box catches limit
+  // stops only through the StopFailure hook. It is not registered with
+  // Windows, though (see windows-platform.test.js): the record is a marker.
+  const dir = join(DIR, 'win32');
+  const marker = installDaemonAutostart({ platform: 'win32', dir, activate: () => true, start: () => {} });
+  assert.equal(marker, join(dir, 'daemon-on-demand'));
+  assert.ok(existsSync(marker));
+  assert.ok(uninstallDaemonAutostart({ platform: 'win32', dir, activate: () => false, stop: () => {} }));
+  assert.ok(!existsSync(marker));
+  // ...and there is no unit, so the launchd/systemd PATH heal never acts here.
+  assert.equal(autostartUnitPath({ platform: 'win32', dir }), null);
 });
 
 test('unsupported platform → null, never throws', () => {

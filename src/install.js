@@ -14,14 +14,14 @@
 import { readFileSync, writeFileSync, renameSync, existsSync, copyFileSync, rmSync, mkdirSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { homedir, userInfo } from 'node:os';
-import { join, dirname, delimiter } from 'node:path';
-import { CLAUDE_SETTINGS, STATE_DIR, WINDOWS_TASK_NAME } from './config.js';
+import { join, dirname, basename, delimiter } from 'node:path';
+import { CLAUDE_SETTINGS, STATE_DIR, WINDOWS_TASK_NAME, DAEMON_ON_DEMAND } from './config.js';
 import { getConfig, configFileExists } from './settings.js';
 import { xmlEscape } from './notify.js';
 import { installGrokHooks, uninstallGrokHooks } from './agents/grok.js';
 import { getAgent } from './agents/index.js';
 import { findCsgProcesses, findCsgAutostarts } from './doctor.js';
-import { UNSNOOZE_BIN, stopResumer } from './spawn.js';
+import { UNSNOOZE_BIN, stopResumer, restartDaemon, stopDaemon } from './spawn.js';
 import { uninstallStatuslineShim } from './usage.js';
 import { powershellProfilePath } from './powershell.js';
 import { fishConfigPath } from './fish.js';
@@ -248,11 +248,12 @@ export function installFishBlock(content, agents = ['claude'], bin = UNSNOOZE_BI
 // GUI sessions (VS Code extension, desktop apps) never pass through the shell
 // wrappers, so their limit stops are only caught while `unsnooze daemon` is
 // alive. Autostart keeps it alive: a launchd user agent on macOS, a systemd
-// user unit on Linux/WSL.
+// user unit on Linux/WSL. Native Windows deliberately gets neither a unit nor
+// a Scheduled Task — the daemon is started on demand there (DAEMON_ON_DEMAND).
 
 export const DAEMON_LABEL = 'com.unsnooze.daemon';
-// Task Scheduler has no reverse-DNS convention and shows this name to the user
-// in taskschd.msc, so it is a plain word rather than the launchd label.
+// The Scheduled Task name unsnooze <= 1.19.1 used; kept for the uninstall that
+// removes one left behind.
 export { WINDOWS_TASK_NAME };
 
 // Is this process running under the supervisor we install, rather than from
@@ -269,14 +270,15 @@ export { WINDOWS_TASK_NAME };
 export function isSupervised({ platform = process.platform, env = process.env } = {}) {
   if (platform === 'darwin') return env.XPC_SERVICE_NAME === DAEMON_LABEL;
   if (platform === 'linux') return typeof env.INVOCATION_ID === 'string' && env.INVOCATION_ID !== '';
-  // win32 stays false on purpose, even though we now install a Scheduled Task.
-  // launchd KeepAlive and systemd Restart=always bring the daemon straight
-  // back; a logon-triggered task does not restart anything until the next
-  // logon. Answering true here would let the version-skew guard exit 0 into
-  // nothing and stop Windows watching silently — the exact failure mode of
-  // issue #8, just with a different trigger. The cost is that a Windows daemon
-  // keeps running pre-upgrade code until the user logs back in; that is the
-  // lesser of the two, and `unsnooze doctor` reports the skew.
+  // win32 stays false on purpose. launchd KeepAlive and systemd Restart=always
+  // bring the daemon straight back; on Windows it is only started again by the
+  // next wrapped launch or StopFailure hook, which may be hours away. Answering
+  // true here would let the version-skew guard exit 0 into nothing and stop
+  // Windows watching silently — the exact failure mode of issue #8, just with a
+  // different trigger. The cost is that a Windows daemon keeps running
+  // pre-upgrade code until it is restarted (a sign-out, or re-running
+  // `unsnooze install --daemon`); that is the lesser of the two, and
+  // `unsnooze doctor` reports the skew.
   return false;
 }
 
@@ -434,20 +436,49 @@ function defaultActivate(cmd, args) {
   }
 }
 
+// Native Windows keeps its "unit" in the state dir: a marker that asks for the
+// daemon to be started on demand. `dir` relocates it, as it does the unit dir
+// elsewhere.
+function onDemandMarker(dir) {
+  return dir ? join(dir, basename(DAEMON_ON_DEMAND)) : DAEMON_ON_DEMAND;
+}
+
+const ON_DEMAND_NOTE = 'While this file exists, the unsnooze daemon is started on demand — by the\n'
+  + 'agent wrappers and the StopFailure hook — whenever it is not running. Nothing\n'
+  + 'is registered to run at sign-in. `unsnooze uninstall` removes this file.\n';
+
+// unsnooze <= 1.19.1 registered the daemon as a logon Scheduled Task. Nothing
+// creates one now, but an install from then may still have it, and a task that
+// runs an interpreter out of %APPDATA% at every logon is exactly what the
+// Defender verdict was about. Ask before deleting, so a machine that never had
+// one — most of them: creating it needed an elevated shell — only ever sees a
+// read-only query. /f so the delete is not an interactive prompt. True when a
+// task was removed.
+export function removeLegacyScheduledTask({ activate = defaultActivate } = {}) {
+  return activate('schtasks', ['/query', '/tn', WINDOWS_TASK_NAME])
+    && activate('schtasks', ['/delete', '/f', '/tn', WINDOWS_TASK_NAME]);
+}
+
 export function installDaemonAutostart({
   platform = process.platform, dir = null, activate = defaultActivate, path = undefined,
+  start = restartDaemon,
 } = {}) {
-  // Native Windows has no unit *file* — the Task Scheduler holds the record —
-  // so it is handled before the file-based platforms below. It matters more
-  // here than anywhere else: the transcript watcher lives in the daemon, and
-  // headless has no pane monitor to fall back on, so without this a Windows
-  // machine only ever catches limit stops through the StopFailure hook.
+  // Native Windows matters more than anywhere: the transcript watcher lives in
+  // the daemon, and headless has no pane monitor to fall back on. But nothing
+  // is registered with Windows to start it. Up to 1.19.1 this created a logon
+  // Scheduled Task (`schtasks /create /sc onlogon /tr "node … daemon"`), and
+  // Microsoft Defender flagged setup as Trojan:Win32/Commando.A!ml for it —
+  // an interpreter running a script from %APPDATA% at every logon is exactly
+  // how malware persists, and any logon entry (Run key, Startup folder) reads
+  // the same way. Without elevation schtasks refused the task anyway. So the
+  // daemon is started now, and started again on demand (spawn.js ensureDaemon).
   if (platform === 'win32') {
-    // /f overwrites an existing task rather than failing with "already exists",
-    // which is what re-running setup does every time.
-    activate('schtasks', ['/create', '/f', '/tn', WINDOWS_TASK_NAME, '/sc', 'onlogon',
-      '/tr', `"${process.execPath}" "${UNSNOOZE_BIN}" daemon`]);
-    return `Scheduled Task \\${WINDOWS_TASK_NAME}`;
+    const marker = onDemandMarker(dir);
+    atomicWrite(marker, ON_DEMAND_NOTE);
+    // Same interlock as the unit platforms below: the real starter only runs
+    // for the marker it would actually read.
+    if (start !== restartDaemon || marker === DAEMON_ON_DEMAND) start();
+    return marker;
   }
   const target = autostartUnitPath({ platform, dir });
   if (!target) return null;
@@ -528,11 +559,23 @@ export function healDaemonAutostart({
   return installDaemonAutostart({ platform, dir, activate, path: better });
 }
 
-export function uninstallDaemonAutostart({ platform = process.platform, dir = null, activate = defaultActivate } = {}) {
+export function uninstallDaemonAutostart({
+  platform = process.platform, dir = null, activate = defaultActivate, stop = stopDaemon,
+} = {}) {
   if (platform === 'win32') {
-    // /f so a missing task is not an interactive prompt on an uninstall path.
-    activate('schtasks', ['/delete', '/f', '/tn', WINDOWS_TASK_NAME]);
-    return `Scheduled Task \\${WINDOWS_TASK_NAME}`;
+    const removed = [];
+    // The marker first, so nothing starts the daemon again once it is stopped.
+    const marker = onDemandMarker(dir);
+    if (existsSync(marker)) {
+      try { unlinkSync(marker); removed.push(marker); } catch { /* still there — not reported as removed */ }
+    }
+    const live = marker === DAEMON_ON_DEMAND;
+    if (stop !== stopDaemon || live) stop();
+    // The interlock again: a relocated marker is a fixture, and the machine's
+    // real Task Scheduler is none of its business.
+    const act = (activate === defaultActivate && !live) ? () => false : activate;
+    if (removeLegacyScheduledTask({ activate: act })) removed.push(`Scheduled Task \\${WINDOWS_TASK_NAME}`);
+    return removed.length ? removed.join(' and ') : null;
   }
   if (platform === 'darwin') {
     const target = join(dir || autostartDir(platform), `${DAEMON_LABEL}.plist`);
@@ -697,7 +740,16 @@ export function cmdInstall(rest, { agents = enabledAgents() } = {}) {
   // 4. Daemon autostart (GUI-session watching), opt-in via --daemon / wizard.
   if (opts.daemon) {
     const target = installDaemonAutostart();
-    if (target) console.log(`unsnooze: daemon autostart installed (${target}) — GUI sessions are watched`);
+    if (target && process.platform === 'win32') {
+      console.log('unsnooze: daemon started in the background — GUI sessions are watched');
+      console.log('unsnooze: nothing is registered to run at sign-in (no Scheduled Task); your wrapped');
+      console.log('unsnooze: agents and the Claude hook start the daemon again whenever it is not running');
+      // This is the path that used to create the task, so it is where an
+      // upgrade converges on the new arrangement.
+      if (removeLegacyScheduledTask()) {
+        console.log(`unsnooze: removed the Scheduled Task \\${WINDOWS_TASK_NAME} an earlier version created`);
+      }
+    } else if (target) console.log(`unsnooze: daemon autostart installed (${target}) — GUI sessions are watched`);
     else console.log('unsnooze: daemon autostart is not supported on this platform');
   }
 

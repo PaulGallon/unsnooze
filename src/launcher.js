@@ -8,7 +8,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { getMultiplexer } from './multiplexer.js';
 import { getAgent } from './agents/index.js';
 import { getConfig, resolveLaunchExtraArgs } from './settings.js';
-import { spawnDetached, monitorSpawnArgs } from './spawn.js';
+import { spawnDetached, monitorSpawnArgs, ensureDaemon } from './spawn.js';
 import { makeLogger } from './logger.js';
 import { createLeaseId, processBirth, writeLease, removeLease } from './lease.js';
 import { recordOwnedSession } from './mux-sessions.js';
@@ -49,7 +49,9 @@ function runPassthrough(agent, args) {
   return r.status ?? 1;
 }
 
-export function runLauncher(args, agentId = 'claude', { processBirthFn = processBirth } = {}) {
+export function runLauncher(args, agentId = 'claude', {
+  processBirthFn = processBirth, ensureDaemonFn = ensureDaemon,
+} = {}) {
   const agent = getAgent(agentId);
 
   // Recursion / nested-launch guard: inside an unsnooze-managed session, a
@@ -121,6 +123,12 @@ export function runLauncher(args, agentId = 'claude', { processBirthFn = process
       return runUnwatched(agent, args, msg);
     }
   }
+
+  // Nothing keeps the daemon running on native Windows (see ensureDaemon), so
+  // every watched launch makes sure it is. Here, past the re-exec above, so a
+  // launch that wraps itself asks once, not twice. A no-op everywhere else,
+  // and until `install --daemon` has asked for the daemon.
+  ensureDaemonFn();
 
   const rawPane = mux.currentPaneId();
   const paneOwner = resolvePaneOwner(mux.name, process.env);
