@@ -7,9 +7,12 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
+// windowsHide: this runs in the daemon and the resumer, which have no console
+// on Windows, so git would otherwise flash a console window of its own at
+// every stop and every wake.
 function git(cwd, args) {
   return execFileSync('git', ['-C', cwd, ...args], {
-    stdio: ['ignore', 'pipe', 'ignore'], timeout: 1500,
+    stdio: ['ignore', 'pipe', 'ignore'], timeout: 1500, windowsHide: true,
   }).toString().trim();
 }
 

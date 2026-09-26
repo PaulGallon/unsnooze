@@ -51,10 +51,11 @@ export const patterns = {
   terminalPatterns: [/insufficient credits/i, /out of credits/i],
 };
 
+// windowsHide: the console-less daemon calls this too (see workspace.js).
 function runSessionList() {
   return execFileSync(process.env.UNSNOOZE_OPENCODE_BIN || 'opencode',
     ['session', 'list', '--format', 'json'],
-    { timeout: 5000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
+    { timeout: 5000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
 }
 
 // `opencode session list --format json` — sessions live in a SQLite db, so ask

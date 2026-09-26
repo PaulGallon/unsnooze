@@ -36,6 +36,16 @@ export function resolvePaneOwner(muxName, env = process.env) {
   return null;
 }
 
+// A headless revival runs this launcher detached, with no console and no
+// terminal on any stdio. On Windows the agent would then be given a console
+// window of its own — an empty window popping up on the desktop at every
+// reset, which closing kills the revival. Hide it there. Whenever a terminal
+// is attached nothing changes: the agent, a console program, shares the
+// launcher's console, and windowsHide only affects a console Windows creates.
+export function hideAgentWindow(streams = process) {
+  return !(streams.stdin?.isTTY || streams.stdout?.isTTY || streams.stderr?.isTTY);
+}
+
 function runUnwatched(agent, args, reason) {
   if (reason) process.stderr.write(`unsnooze: ${reason}\n`);
   return runPassthrough(agent, args);
@@ -187,7 +197,7 @@ export function runLauncher(args, agentId = 'claude', {
   // the reason, never as a crash with no exit code for the resumer to read.
   let child;
   try {
-    child = spawn(agent.bin, args, { stdio: 'inherit', env: childEnv });
+    child = spawn(agent.bin, args, { stdio: 'inherit', env: childEnv, windowsHide: hideAgentWindow() });
   } catch (err) {
     return launchFailed(agent, err);
   }

@@ -29,8 +29,26 @@ On Windows the daemon is now an ordinary background process:
   daemon if it is not running. After a restart it is back as soon as you use
   an agent.
 - **One runs at a time.** The daemon keeps a heartbeat pidfile
-  (`~/.unsnooze/daemon.pid`). A second daemon stands down at once, and a pid
-  that Windows recycled after a sign-out is never mistaken for the daemon.
+  (`~/.unsnooze/daemon.pid`), and a second daemon stands down at once. Once the
+  heartbeat is five minutes old the file no longer counts, whoever its pid
+  belongs to by then, so a pid Windows recycles after a sign-out cannot keep
+  the daemon from starting. A resumer lock left behind by a daemon that was
+  killed is cleared too, so it cannot stall every resume.
+- **It carries no session with it.** Started from inside a Claude Code
+  session (by the hook), it used to inherit that session's environment,
+  including `CLAUDECODE=1`, Claude Code's nested-session guard. Every Claude
+  session it revived would then have refused to start. Background processes
+  now drop the variables that mark one session; your own settings, such as
+  `CLAUDE_CONFIG_DIR` and `CLAUDE_CODE_USE_BEDROCK`, are kept. They also run in
+  your home directory, not the project that happened to start them, which
+  Windows would otherwise refuse to delete or rename until sign-out. The
+  transient resumer the hook starts gets the same treatment, on every
+  platform.
+- **No console windows.** A background daemon has no console. The `git` calls
+  it makes when a session stops and wakes, and the agent a revival starts,
+  now run hidden instead of each popping up a window of its own.
+- **Its output goes to `~/.unsnooze/daemon.log`**, as the launchd daemon's
+  does, so a crash leaves a trace.
 - **Re-running setup restarts it.** `unsnooze install --daemon` stops the
   running daemon and starts a fresh one. That is how it picks up a new
   version, or a `PATH` that now finds an agent, and `unsnooze doctor` now
@@ -40,13 +58,17 @@ If you use only the Codex app or IDE on Windows, nothing you do passes through
 a wrapper or the hook. After signing in, run `unsnooze install --daemon` (or
 launch any wrapped agent) to start the daemon.
 
-Setup does not go looking for a `\unsnooze` Scheduled Task an earlier version
-may have left: that would mean running `schtasks` again. Such a task only
-starts the same daemon at sign-in, which the pidfile tolerates.
-`unsnooze uninstall` deletes it, after checking that it exists, so a machine
-that never had one only ever sees a read-only query; uninstall also removes
-the marker and stops the daemon. macOS and Linux are unchanged (launchd /
-systemd).
+`unsnooze uninstall` removes the marker first, then stops the daemon, so
+nothing can start it again halfway through; a daemon that was only starting at
+that moment sees the marker gone and exits. It also deletes a `\unsnooze`
+Scheduled Task left by an earlier version, after checking that one exists, so
+a machine that never had one only ever sees a read-only query. If the delete
+is refused (a task created from an administrator shell can need one to
+remove), it prints the command to run. Setup does not go looking for that
+task: that would mean running `schtasks` again. A daemon such a task already
+started keeps running until you sign out; from the next sign-in the task only
+starts the same on-demand daemon, which the pidfile keeps to one. macOS and
+Linux are unchanged (launchd / systemd).
 
 ## 1.19.1 — 2026-09-21
 

@@ -13,8 +13,8 @@ import assert from 'node:assert/strict';
 import {
   mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, utimesSync, statSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { tmpdir, homedir } from 'node:os';
+import { join, dirname } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -29,9 +29,11 @@ process.env.UNSNOOZE_CLAUDE_BIN = process.execPath;
 process.env.UNSNOOZE_NOTIFICATIONS = 'off';
 
 const {
-  runningDaemonPid, claimDaemon, ensureDaemon, stopDaemon, pidAlive,
+  runningDaemonPid, claimDaemon, ensureDaemon, stopDaemon, stopResumer, pidAlive,
+  standaloneEnv, detachedSpawnOptions, spawnDetached,
   DAEMON_STALE_MS,
 } = await import('../src/spawn.js');
+const { RESUMER_LOCK } = await import('../src/config.js');
 
 // A stubborn pidfile could hold the directory open on Windows for a moment
 // after a kill; a failed cleanup must not fail the suite.
@@ -135,6 +137,63 @@ test('a daemon replaced in the pidfile stands down, and leaves the file to its s
   assert.equal(readPid(path), LIVE_OTHER, 'release never deletes another daemon\'s claim');
 });
 
+test('a pidfile that vanishes once is not proof — twice is', async () => {
+  // One unreadable moment (an antivirus scan, say) must not end the daemon;
+  // uninstall and a restart remove the file for good, and those must.
+  const path = pidfile();
+  let beats = 0;
+  let lost = 0;
+  const release = claimDaemon({
+    path, heartbeatMs: 20, onLost: () => { lost++; }, wanted: () => { beats++; return true; },
+  });
+  try {
+    rmSync(path);
+    assert.ok(await waitUntil(() => lost === 1), 'a file gone for good ends the daemon');
+    assert.equal(beats, 2, 'on the second beat that finds it missing, not the first');
+  } finally { release(); }
+});
+
+test('a daemon that is no longer wanted stands down', async () => {
+  // How uninstall reaches an on-demand daemon that was only starting while the
+  // marker was being removed.
+  const path = pidfile();
+  let lost = 0;
+  const release = claimDaemon({ path, heartbeatMs: 20, onLost: () => { lost++; }, wanted: () => false });
+  try {
+    assert.ok(await waitUntil(() => lost === 1));
+  } finally { release(); }
+});
+
+test('an empty pidfile a moment old is a claim in progress, not a leftover', () => {
+  // `wx` creates the file before the claimant's pid is written into it.
+  const path = pidfile('');
+  assert.equal(claimDaemon({ path }), null, 'the second claimant stands down');
+  assert.ok(existsSync(path), 'and leaves the first claimant\'s file alone');
+});
+
+test('replacing a dead daemon\'s pidfile clears the resumer lock it left', () => {
+  // A killed daemon (TerminateProcess, sign-out) runs no cleanup, so its
+  // resumer lock survives it. With `ps` absent on Windows, a lock naming a
+  // recycled live pid would be honored forever and nothing would resume.
+  const path = pidfile(LIVE_OTHER, { ageMs: DAEMON_STALE_MS + 60_000 });
+  const lock = join(dirname(path), 'resumer.lock');
+  writeFileSync(lock, String(LIVE_OTHER));
+  const release = claimDaemon({ path, lock });
+  try {
+    assert.ok(release);
+    assert.ok(!existsSync(lock), 'the dead daemon\'s lock is gone');
+  } finally { release?.(); }
+
+  // A lock somebody else holds is none of the claim's business.
+  const path2 = pidfile(LIVE_OTHER, { ageMs: DAEMON_STALE_MS + 60_000 });
+  const lock2 = join(dirname(path2), 'resumer.lock');
+  writeFileSync(lock2, '424242');
+  const release2 = claimDaemon({ path: path2, lock: lock2 });
+  try {
+    assert.equal(readPid(lock2), 424242);
+  } finally { release2?.(); }
+});
+
 // --- ensureDaemon -----------------------------------------------------------
 
 function markerFile({ present = true } = {}) {
@@ -152,7 +211,8 @@ test('ensureDaemon starts the daemon on Windows once setup asked for it', () => 
     spawner: args => { spawned.push(args); return 4321; },
   });
   assert.equal(pid, 4321);
-  assert.deepEqual(spawned, [['daemon']]);
+  // --on-demand: a daemon that exists because of the marker goes with it.
+  assert.deepEqual(spawned, [['daemon', '--on-demand']]);
 });
 
 test('ensureDaemon leaves a running daemon alone', () => {
@@ -203,6 +263,97 @@ test('stopDaemon never signals the pid in a stale pidfile — it may be anyone\'
   assert.equal(stopDaemon({ path, kill: p => killed.push(p) }), null);
   assert.deepEqual(killed, []);
   assert.ok(!existsSync(path), 'the stale file goes anyway');
+});
+
+test('stopDaemon never signals this process, even behind a fresh heartbeat', () => {
+  // A pid recycled inside the five-minute window can be the installer's own.
+  const path = pidfile(process.pid);
+  const killed = [];
+  assert.equal(stopDaemon({ path, kill: p => killed.push(p) }), null);
+  assert.deepEqual(killed, []);
+});
+
+test('stopDaemon clears the resumer lock of the daemon it killed, and only that', () => {
+  // TerminateProcess skips the daemon's own release (see the claimDaemon case).
+  const path = pidfile(LIVE_OTHER);
+  const lock = join(dirname(path), 'resumer.lock');
+  writeFileSync(lock, String(LIVE_OTHER));
+  stopDaemon({ path, lock, kill: () => {} });
+  assert.ok(!existsSync(lock));
+
+  const path2 = pidfile(LIVE_OTHER);
+  const lock2 = join(dirname(path2), 'resumer.lock');
+  writeFileSync(lock2, '424242');
+  stopDaemon({ path: path2, lock: lock2, kill: () => {} });
+  assert.equal(readPid(lock2), 424242, 'a transient resumer\'s lock stays');
+});
+
+test('stopResumer never signals this process, even when a stale lock names it', () => {
+  mkdirSync(dirname(RESUMER_LOCK), { recursive: true });
+  writeFileSync(RESUMER_LOCK, String(process.pid));
+  const r = stopResumer();   // reaching the next line at all is the assertion
+  assert.equal(r.stopped, false);
+  assert.ok(!existsSync(RESUMER_LOCK), 'the stale lock is cleared');
+});
+
+// --- how background processes are started -----------------------------------
+
+test('a process that outlives its session carries no session markers', () => {
+  const env = standaloneEnv({
+    CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', CLAUDE_CODE_CHILD_SESSION: '1',
+    CLAUDE_PROJECT_DIR: 'C:\\proj', UNSNOOZE_ACTIVE: '1', UNSNOOZE_LEASE_ID: 'l1',
+    // Windows names are case-insensitive, and a copy keeps whatever case was set.
+    ClaudeCode: '1', unsnooze_mux: 'headless',
+    // User configuration stays — a revival needs it.
+    CLAUDE_CONFIG_DIR: 'C:\\cfg', CLAUDE_CODE_USE_BEDROCK: '1', CLAUDE_CODE_GIT_BASH_PATH: 'C:\\bash.exe',
+    Path: 'C:\\bin', TMUX: '/tmp/tmux-1/default,1,0', UNSNOOZE_SELF: 'x',
+  });
+  assert.deepEqual(Object.keys(env).sort(), [
+    'CLAUDE_CODE_GIT_BASH_PATH', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CONFIG_DIR', 'Path', 'TMUX', 'UNSNOOZE_SELF',
+  ]);
+});
+
+test('standalone background processes start in the home directory with a clean environment', () => {
+  // On Windows a live process's working directory cannot be deleted or
+  // renamed, so a daemon started from a project would pin that folder.
+  const saved = { CLAUDECODE: process.env.CLAUDECODE, UNSNOOZE_ACTIVE: process.env.UNSNOOZE_ACTIVE };
+  Object.assign(process.env, { CLAUDECODE: '1', UNSNOOZE_ACTIVE: '1' });
+  try {
+    const opts = detachedSpawnOptions({ standalone: true, env: { EXTRA: 'x' } });
+    assert.equal(opts.cwd, homedir());
+    assert.equal(opts.env.CLAUDECODE, undefined);
+    assert.equal(opts.env.UNSNOOZE_ACTIVE, undefined);
+    assert.equal(opts.env.EXTRA, 'x');
+    assert.ok(opts.detached);
+
+    // Everything else (monitors, update checks) is spawned exactly as before.
+    const plain = detachedSpawnOptions({ env: { EXTRA: 'x' } });
+    assert.equal(plain.cwd, undefined);
+    assert.equal(plain.env.CLAUDECODE, '1');
+    assert.equal(plain.stdio, 'ignore');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  }
+});
+
+test('a log file receives the child\'s stdout and stderr', () => {
+  assert.deepEqual(detachedSpawnOptions({ logFd: 7 }).stdio, ['ignore', 7, 7]);
+});
+
+test('a spawn that fails after returning does not crash the caller', async () => {
+  // Node reports ENOENT/EACCES/EAGAIN/EMFILE as an 'error' event on the next
+  // tick; with no listener that is an uncaught exception in the launcher.
+  const pid = spawnDetached(['daemon'], {}, { execPath: join(DIR, 'no-such-node') });
+  assert.equal(pid, undefined);
+  await sleep(200);   // still running is the assertion
+});
+
+test('the agent gets a hidden console only when no terminal is attached', async () => {
+  const { hideAgentWindow } = await import('../src/launcher.js');
+  assert.equal(hideAgentWindow({ stdin: { isTTY: true }, stdout: {}, stderr: {} }), false);
+  assert.equal(hideAgentWindow({ stdin: {}, stdout: { isTTY: true }, stderr: {} }), false);
+  assert.equal(hideAgentWindow({ stdin: {}, stdout: {}, stderr: { isTTY: true } }), false);
+  assert.equal(hideAgentWindow({ stdin: {}, stdout: {}, stderr: {} }), true, 'a detached revival');
 });
 
 // --- where the daemon is started from ---------------------------------------
@@ -293,14 +444,27 @@ winTest('the StopFailure hook starts the daemon once setup asked for it', async 
   mkdirSync(state, { recursive: true });
   writeFileSync(join(state, 'daemon-on-demand'), '');
   const r = spawnSync(process.execPath, [REAL_BIN, '_hook-stopfailure'], {
-    env: binEnv(state), input: '{}', encoding: 'utf-8', timeout: 20_000,
+    // As Claude Code runs its hooks: inside a session.
+    env: { ...binEnv(state), CLAUDECODE: '1' }, input: '{}', encoding: 'utf-8', timeout: 20_000,
   });
   assert.equal(r.status, 0, r.stderr);
   let pid = NaN;
   try {
     assert.ok(await waitUntil(() => pidAlive(pid = readPid(join(state, 'daemon.pid'))), 20_000),
       'the hook started a daemon, and it claimed the pidfile');
+    assert.ok(existsSync(join(state, 'daemon.log')), 'its output goes to daemon.log, not nowhere');
   } finally {
     if (pidAlive(pid)) process.kill(pid);
   }
+});
+
+winTest('an on-demand daemon starting after uninstall exits without claiming anything', () => {
+  // The marker is gone by the time it runs: it must not become a daemon that
+  // outlives the uninstall until sign-out.
+  const state = join(DIR, 'bin-uninstalled');
+  const r = spawnSync(process.execPath, [REAL_BIN, 'daemon', '--on-demand'], {
+    env: binEnv(state), encoding: 'utf-8', timeout: 20_000,
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!existsSync(join(state, 'daemon.pid')));
 });

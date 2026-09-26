@@ -451,11 +451,12 @@ const ON_DEMAND_NOTE = 'While this file exists, the unsnooze daemon is started o
 // creates one now, but an install from then may still have it; uninstall
 // removes it. Ask before deleting, so a machine that never had one — most of
 // them: creating it needed an elevated shell — only ever sees a read-only
-// query. /f so the delete is not an interactive prompt. True when a task was
-// removed.
+// query. /f so the delete is not an interactive prompt. 'removed', 'stuck'
+// (it exists but the delete failed — a task created from an elevated shell
+// can need one to delete), or null when there was none.
 export function removeLegacyScheduledTask({ activate = defaultActivate } = {}) {
-  return activate('schtasks', ['/query', '/tn', WINDOWS_TASK_NAME])
-    && activate('schtasks', ['/delete', '/f', '/tn', WINDOWS_TASK_NAME]);
+  if (!activate('schtasks', ['/query', '/tn', WINDOWS_TASK_NAME])) return null;
+  return activate('schtasks', ['/delete', '/f', '/tn', WINDOWS_TASK_NAME]) ? 'removed' : 'stuck';
 }
 
 export function installDaemonAutostart({
@@ -560,10 +561,12 @@ export function healDaemonAutostart({
 
 export function uninstallDaemonAutostart({
   platform = process.platform, dir = null, activate = defaultActivate, stop = stopDaemon,
+  say = () => {},
 } = {}) {
   if (platform === 'win32') {
     const removed = [];
-    // The marker first, so nothing starts the daemon again once it is stopped.
+    // The marker first, so nothing starts the daemon again once it is stopped
+    // (and an on-demand daemon that is only now starting sees it gone).
     const marker = onDemandMarker(dir);
     if (existsSync(marker)) {
       try { unlinkSync(marker); removed.push(marker); } catch { /* still there — not reported as removed */ }
@@ -573,7 +576,12 @@ export function uninstallDaemonAutostart({
     // The interlock again: a relocated marker is a fixture, and the machine's
     // real Task Scheduler is none of its business.
     const act = (activate === defaultActivate && !live) ? () => false : activate;
-    if (removeLegacyScheduledTask({ activate: act })) removed.push(`Scheduled Task \\${WINDOWS_TASK_NAME}`);
+    const legacy = removeLegacyScheduledTask({ activate: act });
+    if (legacy === 'removed') removed.push(`Scheduled Task \\${WINDOWS_TASK_NAME}`);
+    else if (legacy === 'stuck') {
+      say(`could not delete the Scheduled Task \\${WINDOWS_TASK_NAME} an earlier version created; `
+        + `from an administrator shell run: schtasks /delete /tn ${WINDOWS_TASK_NAME} /f`);
+    }
     return removed.length ? removed.join(' and ') : null;
   }
   if (platform === 'darwin') {
@@ -738,9 +746,13 @@ export function cmdInstall(rest, { agents = enabledAgents() } = {}) {
 
   // 4. Daemon autostart (GUI-session watching), opt-in via --daemon / wizard.
   if (opts.daemon) {
-    const target = installDaemonAutostart();
+    // On Windows the start's outcome is kept, so the message can be honest.
+    let started = null;
+    const target = installDaemonAutostart(process.platform === 'win32'
+      ? { start: () => { started = restartDaemon(); } } : {});
     if (target && process.platform === 'win32') {
-      console.log('unsnooze: daemon started in the background — GUI sessions are watched');
+      if (started) console.log(`unsnooze: daemon started in the background (pid ${started}) — GUI sessions are watched`);
+      else console.log('unsnooze: the daemon did not start — run `unsnooze daemon` to see why');
       console.log('unsnooze: nothing is registered to run at sign-in (no Scheduled Task); your wrapped');
       console.log('unsnooze: agents and the Claude hook start the daemon again whenever it is not running');
       // A task left by 1.19.1 or earlier is deliberately not looked for here:
@@ -775,7 +787,16 @@ export function cmdUninstall(rest) {
   const opts = parseArgs(rest);
   const explicitRc = rest.includes('--zshrc');
 
-  // Stop the resumer/daemon first so it cannot keep writing state after hooks
+  // Whatever starts the daemon goes first — the launchd/systemd unit, or on
+  // Windows the marker the wrappers and the hook consult — so nothing can
+  // start it again mid-uninstall. On Windows this order also stops the daemon
+  // while its pidfile still proves which process it is, not after
+  // stopResumer has killed it and left a pid that may already be someone
+  // else's.
+  const autostart = uninstallDaemonAutostart({ say: m => console.log(`unsnooze: ${m}`) });
+  if (autostart) console.log(`unsnooze: daemon autostart removed (${autostart})`);
+
+  // Stop the resumer/daemon so it cannot keep writing state after hooks
   // are gone (zombie-daemon-running-deleted-code failure mode).
   try {
     const result = stopResumer();
@@ -830,9 +851,6 @@ export function cmdUninstall(rest) {
       console.log(`unsnooze: fish wrappers removed from ${cfg}`);
     }
   }
-
-  const autostart = uninstallDaemonAutostart();
-  if (autostart) console.log(`unsnooze: daemon autostart removed (${autostart})`);
 
   // Restore Claude statusLine if our usage shim was chained in.
   try {

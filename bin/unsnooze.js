@@ -240,10 +240,14 @@ async function main() {
       // and the wrappers and the hook can both start one at once. Claim the
       // pidfile before doing anything else: a daemon that finds a live one
       // already running exits here, and one that later finds itself replaced
-      // stands down.
+      // stands down. --on-demand (how ensureDaemon starts it) also ties the
+      // daemon to its marker, so uninstall ends it rather than sign-out.
+      const onDemand = rest.includes('--on-demand');
       let releaseDaemon = null;
       if (process.platform === 'win32') {
-        releaseDaemon = spawnMod.claimDaemon({ onLost: () => controller.abort() });
+        const wanted = onDemand ? () => spawnMod.onDemandWanted() : () => true;
+        if (!wanted()) return 0;   // uninstalled between the start and now
+        releaseDaemon = spawnMod.claimDaemon({ onLost: () => controller.abort(), wanted });
         if (!releaseDaemon) {
           // Reaches a terminal only when a user ran `unsnooze daemon` by hand;
           // an on-demand start has nowhere to print.
@@ -252,68 +256,70 @@ async function main() {
           return 0;
         }
       }
-      // Self-heal pre-1.12 autostart units: they lack PATH, so this daemon
-      // cannot find tmux and every revival dies. Healing rewrites the unit
-      // and reloads it — which intentionally kills THIS process; the
-      // supervisor restarts us under the fixed unit. One-time: healed units
-      // pass the check forever after.
-      const installMod = await safeImport('../src/install.js');
-      if (installMod?.healDaemonAutostart) {
-        try {
-          const healed = installMod.healDaemonAutostart();
-          if (healed) {
-            const lm = await safeImport('../src/logger.js');
-            lm?.log('daemon', `autostart unit lacked PATH — regenerated ${healed}, reloading (self-heal)`);
-          }
-        } catch { /* heal is best-effort — a broken unit must not block the daemon */ }
-      }
-      // daemon.log is launchd/systemd-captured stdout+stderr. launchd holds
-      // an open fd on it for our whole lifetime, so rotation must be
-      // copy-truncate: renaming would leave launchd appending to the renamed
-      // inode forever, with no fresh daemon.log until the next respawn.
-      const loggerMod = await safeImport('../src/logger.js');
-      const configMod = await safeImport('../src/config.js');
-      if (loggerMod && configMod) {
-        const { join } = await import('node:path');
-        loggerMod.copyTruncateIfLarge(join(configMod.STATE_DIR, 'daemon.log'));
-      }
-      // Version-skew guard: when npm swaps the package underneath us, exit
-      // cleanly so launchd/systemd restart the daemon on the fresh code.
-      // Interval stays at 15 minutes on purpose — a tighter loop raises the
-      // odds of restarting INTO a half-installed package, which is the
-      // crash-loop the unit throttles exist to survive.
-      // Exiting is only safe under a supervisor. `unsnooze daemon` run from a
-      // shell has nothing to restart it, so there it warns and keeps watching
-      // rather than ending GUI watching silently.
-      const updMod = await safeImport('../src/update-check.js');
-      const notifyMod = await safeImport('../src/notify.js');
-      if (updMod?.hasVersionSkew) {
-        let warnedSkew = false;
-        setInterval(() => {
-          const action = updMod.daemonSkewAction({
-            skewed: updMod.hasVersionSkew(),
-            // Unknown means assume supervised: that is how the daemon is
-            // installed for all but a handful of users, and it preserves the
-            // long-standing behavior when install.js could not be loaded.
-            supervised: installMod?.isSupervised ? installMod.isSupervised() : true,
-            alreadyWarned: warnedSkew,
-          });
-          if (action === 'restart') controller.abort();
-          else if (action === 'warn') {
-            warnedSkew = true;
-            const msg = 'package was upgraded on disk but this daemon is not supervised — '
-              + 'still running the old code; restart it to pick up the new version';
-            loggerMod?.log('daemon', msg);
-            notifyMod?.notify('unsnooze needs a restart', msg, { priority: 4 });
-          }
-        }, 15 * 60_000).unref();
-      }
-      // Daily update check from the daemon: GUI-only users never run CLI
-      // commands, so this is what gets them the "new version" desktop toast.
-      const { spawnDetached } = spawnMod;
-      spawnDetached(['_update-check']);
-      setInterval(() => spawnDetached(['_update-check']), 24 * 3_600_000).unref();
+      // From the claim on, every way out gives it back.
       try {
+        // Self-heal pre-1.12 autostart units: they lack PATH, so this daemon
+        // cannot find tmux and every revival dies. Healing rewrites the unit
+        // and reloads it — which intentionally kills THIS process; the
+        // supervisor restarts us under the fixed unit. One-time: healed units
+        // pass the check forever after.
+        const installMod = await safeImport('../src/install.js');
+        if (installMod?.healDaemonAutostart) {
+          try {
+            const healed = installMod.healDaemonAutostart();
+            if (healed) {
+              const lm = await safeImport('../src/logger.js');
+              lm?.log('daemon', `autostart unit lacked PATH — regenerated ${healed}, reloading (self-heal)`);
+            }
+          } catch { /* heal is best-effort — a broken unit must not block the daemon */ }
+        }
+        // daemon.log is launchd/systemd-captured stdout+stderr. launchd holds
+        // an open fd on it for our whole lifetime, so rotation must be
+        // copy-truncate: renaming would leave launchd appending to the renamed
+        // inode forever, with no fresh daemon.log until the next respawn.
+        const loggerMod = await safeImport('../src/logger.js');
+        const configMod = await safeImport('../src/config.js');
+        if (loggerMod && configMod) {
+          const { join } = await import('node:path');
+          loggerMod.copyTruncateIfLarge(join(configMod.STATE_DIR, 'daemon.log'));
+        }
+        // Version-skew guard: when npm swaps the package underneath us, exit
+        // cleanly so launchd/systemd restart the daemon on the fresh code.
+        // Interval stays at 15 minutes on purpose — a tighter loop raises the
+        // odds of restarting INTO a half-installed package, which is the
+        // crash-loop the unit throttles exist to survive.
+        // Exiting is only safe under a supervisor. `unsnooze daemon` run from a
+        // shell has nothing to restart it, so there it warns and keeps watching
+        // rather than ending GUI watching silently.
+        const updMod = await safeImport('../src/update-check.js');
+        const notifyMod = await safeImport('../src/notify.js');
+        if (updMod?.hasVersionSkew) {
+          let warnedSkew = false;
+          setInterval(() => {
+            const action = updMod.daemonSkewAction({
+              skewed: updMod.hasVersionSkew(),
+              // Unknown means assume supervised: that is how the daemon is
+              // installed for all but a handful of users, and it preserves the
+              // long-standing behavior when install.js could not be loaded.
+              supervised: installMod?.isSupervised ? installMod.isSupervised() : true,
+              alreadyWarned: warnedSkew,
+            });
+            if (action === 'restart') controller.abort();
+            else if (action === 'warn') {
+              warnedSkew = true;
+              const msg = 'package was upgraded on disk but this daemon is not supervised — '
+                + 'still running the old code; '
+                + (onDemand ? 'run `unsnooze install --daemon` to restart it' : 'restart it to pick up the new version');
+              loggerMod?.log('daemon', msg);
+              notifyMod?.notify('unsnooze needs a restart', msg, { priority: 4 });
+            }
+          }, 15 * 60_000).unref();
+        }
+        // Daily update check from the daemon: GUI-only users never run CLI
+        // commands, so this is what gets them the "new version" desktop toast.
+        const { spawnDetached } = spawnMod;
+        spawnDetached(['_update-check']);
+        setInterval(() => spawnDetached(['_update-check']), 24 * 3_600_000).unref();
         return await runResumer({ persistent: true, watcher: createWatcher(), signal: controller.signal });
       } finally {
         releaseDaemon?.();

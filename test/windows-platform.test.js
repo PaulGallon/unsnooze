@@ -265,6 +265,20 @@ test('windows uninstall deletes a Scheduled Task left by 1.19.1 or earlier', () 
   assert.equal(removed, 'Scheduled Task \\unsnooze');
 });
 
+test('windows uninstall says how to delete an old task it could not', () => {
+  // A task created from an elevated shell can need one to delete it.
+  const dir = join(WIN_AUTOSTART_DIR, 'stuck');
+  const said = [];
+  const removed = uninstallDaemonAutostart({
+    platform: 'win32', dir, stop: () => {}, say: m => said.push(m),
+    activate: (file, args) => args[0] === '/query',   // it exists; the delete is refused
+  });
+  assert.equal(removed, null, 'not reported as removed');
+  assert.equal(said.length, 1);
+  assert.match(said[0], /administrator/);
+  assert.match(said[0], /schtasks \/delete \/tn unsnooze \/f/);
+});
+
 test('windows uninstall with nothing installed reports nothing removed', () => {
   const dir = join(WIN_AUTOSTART_DIR, 'nothing');
   assert.equal(uninstallDaemonAutostart({ platform: 'win32', dir, activate: () => false, stop: () => {} }), null);
