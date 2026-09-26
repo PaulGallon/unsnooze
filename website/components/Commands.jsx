@@ -1,4 +1,4 @@
-import Reveal from './Reveal.jsx';
+import { Fragment } from 'react';
 
 const CMDS = [
   ['unsnooze status', <>tracked sessions, reset countdowns, context sizes — or a live dashboard on a TTY</>],
@@ -12,6 +12,7 @@ const CMDS = [
   ['unsnooze sessions', <>list unsnooze-owned multiplexer sessions and panes</>],
   ['unsnooze hosts add <name>', <>register another machine over ssh — key or password auth (<code className="chip">hosts test</code> pre-flights it)</>],
   ['unsnooze fleet', <>every registered host's sessions in one view; resume/cancel remotely from the dashboard's fleet tab</>],
+  ['unsnooze design setup', <>register the <code className="chip">claude-design</code> MCP server so Claude Design runs watched inside Claude Code</>],
   ['unsnooze reap', <>close finished panes and empty sessions — dry-run by default</>],
   ['unsnooze doctor', <>install health check, with <code className="chip">--fix</code></>],
   ['unsnooze logs -f', <>what unsnooze has been doing, live</>],
@@ -22,33 +23,25 @@ const CMDS = [
 
 export default function Commands() {
   return (
-    <section id="commands">
-      <Reveal>
+    <section className="poster" id="commands">
+      <div className="rv head--end">
         <p className="eyebrow">the toolbox</p>
-        <h2>You mostly just run <span className="hl">claude</span> — unsnooze watches tmux and Zellij</h2>
+        <h2 className="poster-h">You mostly just run <span className="hl">claude</span> — unsnooze watches the terminal</h2>
         <p className="section-lede">
           Day to day nothing changes — the shell wrapper watches <code className="chip">claude</code>,
           <code className="chip">codex</code> and friends automatically. The rest of the CLI is
           for looking around — see the{' '}
           <a href="/docs/commands/">full command reference</a> for every flag and example.
         </p>
-      </Reveal>
-      <Reveal delay={0.1}>
-        <div className="cmds">
-          {CMDS.map(([cmd, desc]) => (
-            <FragmentRow key={cmd} cmd={cmd} desc={desc} />
-          ))}
-        </div>
-      </Reveal>
+      </div>
+      <div className="cmds rv">
+        {CMDS.map(([cmd, desc]) => (
+          <Fragment key={cmd}>
+            <code>{cmd}</code>
+            <span>{desc}</span>
+          </Fragment>
+        ))}
+      </div>
     </section>
-  );
-}
-
-function FragmentRow({ cmd, desc }) {
-  return (
-    <>
-      <code>{cmd}</code>
-      <span>{desc}</span>
-    </>
   );
 }

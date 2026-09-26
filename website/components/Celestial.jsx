@@ -1,153 +1,138 @@
 'use client';
 
-import { useEffect } from 'react';
-import {
-  motion, useScroll, useTransform, useMotionValue, useMotionValueEvent, useReducedMotion,
-} from 'framer-motion';
+import { useEffect, useRef } from 'react';
+import Stars from './Stars.jsx';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const seg = (p, a, b) => Math.min(1, Math.max(0, (p - a) / (b - a)));
+const smooth = (t) => t * t * (3 - 2 * t);
+const DOCK = 0.93; // scroll progress where the rising sun starts to settle
 
-const BASE = 112; // disc diameter at the top of the page
-const DOCK = 0.93; // scroll progress where the sun starts settling onto the footer horizon
-const LAND = 0.995; // fully landed just before exact full scroll — mobile browsers often settle a fraction of a pixel short of the true bottom
-const GLOW = 90; // how far the halo extends past the disc
-
-// One body crosses the whole page: a crescent moon in the hero that sinks as
-// you read (moonset by mid-page), slips below the fold during the darkest
-// hours, and comes back up the middle as the sun. Over the last stretch it
-// docks onto the footer's #sun-anchor — measured live every frame — and sinks
-// half-below the horizon, everything (disc AND halo) cut at the horizon line.
-// The halo is painted by radial-gradient layers inside the clipped tree, not
-// box-shadow — a shadow on the clipped element would either vanish or outline
-// the missing half.
+// The home page's sky, driven by scroll: stars that drift and go out, the
+// dawn wash rising from below, the hero bloom, and one body that crosses the
+// whole page — a crescent moon in the hero that sets down the right edge,
+// slips below the fold for the darkest hours, and comes back up the middle as
+// the sun, finally settling half-set on the footer's own horizon line
+// (#sun-anchor), clear of the sign-off wordmark. Every frame is imperative
+// style writes — nothing here goes through React state.
 export default function Celestial() {
-  const { scrollYProgress } = useScroll();
-  const reduced = useReducedMotion();
-
-  // Starts invisible at an offscreen position: the first update() both places
-  // and reveals it in one commit, so the jump into the viewport never paints
-  // (keeps CLS at zero).
-  const left = useMotionValue(-9999);
-  const top = useMotionValue(-9999);
-  const width = useMotionValue(BASE);
-  const height = useMotionValue(BASE);
-  const clipPath = useMotionValue(`inset(0 0 0 0 round ${BASE / 2}px)`); // the disc
-  const horizonClip = useMotionValue('inset(-999px)'); // the horizon cut, disc + halo
-
-  const opacity = useMotionValue(0);
-  const backgroundColor = useTransform(scrollYProgress, [0.35, 0.78], ['#dfe6f2', '#f59e0b']);
-  const moonGlow = useTransform(scrollYProgress, [0, 0.5, 0.78], [1, 0.7, 0]);
-  const sunGlow = useTransform(scrollYProgress, [0.62, 0.9, 1], [0, 0.85, 1]);
-  const shadeX = useTransform(scrollYProgress, [0, 0.55], ['32%', '100%']);
-  const shadeOpacity = useTransform(scrollYProgress, [0.5, 0.62], [1, 0]);
-  const gradOpacity = useTransform(scrollYProgress, [0.62, 0.85], [0, 1]);
-
-  const update = (p) => {
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const narrow = vw <= 640;
-    // On narrow screens the path hugs the right edge so the body stays out of
-    // the text column as long as possible.
-    const edge = narrow ? 0.08 : 0;
-    const size = BASE * (narrow ? 0.57 : 1) * (
-      p < 0.5 ? lerp(1, 0.85, seg(p, 0, 0.5))
-        : p < 0.65 ? lerp(0.85, 1.05, seg(p, 0.5, 0.65))
-          : lerp(1.05, 1.25, seg(p, 0.65, DOCK))
-    );
-
-    // Path of the disc's center, in viewport px.
-    let cx;
-    let cy;
-    if (p < 0.45) { // moonset down the right edge
-      cx = (lerp(0.82, 0.86, seg(p, 0, 0.45)) + edge) * vw;
-      cy = lerp(0.21, 0.72, seg(p, 0, 0.45)) * vh;
-    } else if (p < 0.55) { // dipping below the fold
-      cx = (lerp(0.86, 0.88, seg(p, 0.45, 0.55)) + edge) * vw;
-      cy = lerp(0.72, 1.16, seg(p, 0.45, 0.55)) * vh;
-    } else if (p < 0.62) { // the darkest hour — crossing to center, out of sight
-      cx = lerp(0.88 + edge, 0.5, seg(p, 0.55, 0.62)) * vw;
-      cy = 1.16 * vh;
-    } else { // sunrise up the middle
-      cx = 0.5 * vw;
-      cy = lerp(1.16, 0.3, seg(p, 0.62, DOCK)) * vh;
-    }
-
-    // Base fade over the night, plus a strong dim while the body travels
-    // through the text column — narrow screens dim the whole journey, wide
-    // screens dim the center-rising sun — restored to full as it docks into
-    // the footer's open space.
-    let op = p < 0.45 ? lerp(1, 0.9, seg(p, 0, 0.45))
-      : p < 0.55 ? lerp(0.9, 0.5, seg(p, 0.45, 0.55))
-        : p < 0.65 ? lerp(0.5, 1, seg(p, 0.55, 0.65)) : 1;
-    if (narrow) op *= lerp(0.4, 1, seg(p, DOCK, LAND));
-    else if (p >= 0.55) op *= lerp(0.35, 1, seg(p, DOCK, LAND));
-
-    const r = size / 2;
-    let visibleBottom = cy + r; // where the lowest visible pixel sits
-    let clip = 0; // how much of the disc is behind the horizon
-    let rBottom = r; // bottom corner radius of the disc clip — 0 once landed
-    let horizonBottom = -999; // halo uncut until the sun starts landing
-
-    const anchor = document.getElementById('sun-anchor');
-    if (anchor && p > DOCK) {
-      const t = seg(p, DOCK, LAND);
-      const rect = anchor.getBoundingClientRect();
-      cx = lerp(cx, rect.left + rect.width / 2, t);
-      visibleBottom = lerp(visibleBottom, rect.bottom, t);
-      clip = r * t; // half-set at full scroll — the footer's half-disc
-      rBottom = r * (1 - t);
-      horizonBottom = lerp(-(GLOW + 50), clip, t); // halo recedes to the horizon line
-    }
-
-    opacity.set(op);
-    left.set(cx - r);
-    top.set(visibleBottom + clip - size);
-    width.set(size);
-    height.set(size);
-    clipPath.set(`inset(0 0 ${clip}px 0 round ${r}px ${r}px ${rBottom}px ${rBottom}px)`);
-    horizonClip.set(`inset(-999px -999px ${horizonBottom}px -999px)`);
+  const refs = {
+    dawn: useRef(null), bloom: useRef(null), cel: useRef(null), disc: useRef(null),
+    shade: useRef(null), sunFace: useRef(null), glowMoon: useRef(null), glowSun: useRef(null),
   };
 
-  useMotionValueEvent(scrollYProgress, 'change', update);
-
   useEffect(() => {
-    if (reduced) return undefined;
-    const sync = () => update(scrollYProgress.get());
-    sync();
-    // The anchor's viewport position can move without scrollYProgress
-    // ticking — mobile URL-bar collapse, elastic overscroll at the page
-    // bottom (progress pinned at 1), late layout shifts — so re-measure on
-    // every signal that can move the horizon, not just progress changes.
-    window.addEventListener('resize', sync);
-    window.addEventListener('scroll', sync, { passive: true });
-    window.visualViewport?.addEventListener('resize', sync);
-    window.visualViewport?.addEventListener('scroll', sync);
-    const ro = new ResizeObserver(sync);
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const { dawn, bloom, cel, disc, shade, sunFace, glowMoon, glowSun } =
+      Object.fromEntries(Object.entries(refs).map(([k, r]) => [k, r.current]));
+    const starsEl = document.getElementById('stars');
+    const footerEl = document.querySelector('footer.site-foot');
+    const anchor = document.getElementById('sun-anchor');
+
+    // how far the sun has landed: 0 while the page end is a screen or more
+    // away, 1 when the page bottom is the viewport bottom
+    const landing = (p, remaining) => {
+      if (p < 0.6) return 0;
+      return smooth(1 - Math.min(1, Math.max(0, remaining / (innerHeight * 0.95))));
+    };
+
+    const place = (p, t) => {
+      const vw = innerWidth, vh = innerHeight, narrow = vw <= 640;
+      const base = narrow ? 118 : 230; // disc box, px — large in the hero
+      const edge = narrow ? 0.06 : 0;
+      const k = p < 0.5 ? lerp(1, 0.62, seg(p, 0, 0.5)) // shrinks as it sets…
+        : p < 0.65 ? lerp(0.62, 0.72, seg(p, 0.5, 0.65))
+          : lerp(0.72, 0.9, seg(p, 0.65, DOCK)); // …swells again as the sun
+      // …and settles, half-set, on its own horizon above the footer
+      const landSize = narrow ? Math.min(vw * 0.36, 150) : Math.min(vw * 0.2, 280);
+      const size = lerp(base * k, landSize, t);
+      const B = Math.max(base, size);
+      let cx; let cy;
+      if (p < 0.45) { cx = (lerp(0.8, 0.86, seg(p, 0, 0.45)) + edge) * vw; cy = lerp(narrow ? 0.16 : 0.3, 0.72, seg(p, 0, 0.45)) * vh; }
+      else if (p < 0.55) { cx = (lerp(0.86, 0.88, seg(p, 0.45, 0.55)) + edge) * vw; cy = lerp(0.72, 1.2, seg(p, 0.45, 0.55)) * vh; }
+      else if (p < 0.62) { cx = lerp(0.88 + edge, 0.5, seg(p, 0.55, 0.62)) * vw; cy = 1.2 * vh; }
+      else { cx = 0.5 * vw; cy = lerp(1.2, 0.34, seg(p, 0.62, DOCK)) * vh; }
+
+      let op = p < 0.45 ? lerp(1, 0.5, seg(p, 0.03, 0.12)) : p < 0.55 ? 0.5 : p < 0.65 ? lerp(0.5, 1, seg(p, 0.55, 0.65)) : 1;
+      if (narrow) op *= p < 0.08 ? 1 : lerp(0.5, 1, t);
+      else if (p >= 0.55) op *= lerp(0.7, 1, t);
+
+      const r = size / 2, s = size / B;
+      let center = cy, clip = 0, hbLocal = null;
+      if (t > 0 && anchor) {
+        // Land: glide to the anchor — half-set on the footer horizon.
+        const rect = anchor.getBoundingClientRect();
+        cx = lerp(cx, rect.left, t);
+        center = lerp(cy, rect.bottom, t);
+        clip = Math.min(size, Math.max(0, center + r - rect.bottom));
+        hbLocal = B - (rect.bottom - (center - r)) / s;
+      }
+      cel.style.width = cel.style.height = `${B.toFixed(1)}px`;
+      cel.style.opacity = op.toFixed(3);
+      cel.style.transform = `translate3d(${(cx - B / 2).toFixed(1)}px, ${(center - B / 2).toFixed(1)}px, 0) scale(${s.toFixed(4)})`;
+      const lb = B / 2, lc = clip / s, lrb = clip > 0 ? 0 : lb;
+      disc.style.clipPath = `inset(0 0 ${lc.toFixed(1)}px 0 round ${lb}px ${lb}px ${lrb.toFixed(1)}px ${lrb.toFixed(1)}px)`;
+      cel.style.clipPath = hbLocal === null ? 'none' : `inset(-999px -999px ${hbLocal.toFixed(1)}px -999px)`;
+      shade.style.transform = `translateX(${(lerp(0.3, 1.05, seg(p, 0, 0.55)) * 100).toFixed(1)}%)`;
+      shade.style.opacity = (1 - seg(p, 0.5, 0.62)).toFixed(3);
+      sunFace.style.opacity = seg(p, 0.45, 0.8).toFixed(3);
+      glowMoon.style.opacity = (p < 0.5 ? lerp(1, 0.7, seg(p, 0, 0.5)) : lerp(0.7, 0, seg(p, 0.5, 0.78))).toFixed(3);
+      glowSun.style.opacity = (p < 0.9 ? lerp(0, 0.85, seg(p, 0.62, 0.9)) : lerp(0.85, 1, t)).toFixed(3);
+      footerEl?.style.setProperty('--sun', Math.pow(t, 1.3).toFixed(3));
+    };
+
+    const frame = () => {
+      const y = scrollY, max = Math.max(1, document.documentElement.scrollHeight - innerHeight);
+      const p = Math.min(1, Math.max(0, y / max));
+      if (starsEl) starsEl.style.opacity = (p < 0.7 ? lerp(1, 0.8, p / 0.7) : lerp(0.8, 0, seg(p, 0.7, 0.95))).toFixed(3);
+      if (!reduced) {
+        if (starsEl) starsEl.style.transform = `translate3d(0, ${(-p * 14).toFixed(2)}vh, 0)`;
+        dawn.style.opacity = (p < 0.5 ? lerp(0, 0.05, p / 0.5) : p < 0.85 ? lerp(0.05, 0.3, seg(p, 0.5, 0.85)) : lerp(0.3, 1, seg(p, 0.85, 1))).toFixed(3);
+      }
+      bloom.style.opacity = (1 - seg(y, 0, innerHeight * 0.9)).toFixed(3);
+      if (!reduced) place(p, landing(p, max - y));
+    };
+
+    let queued = false;
+    const onScroll = () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; frame(); });
+    };
+    // The anchor can move without a scroll event — mobile URL-bar collapse,
+    // late layout (fonts, the sign-off crop) — so re-measure on all of them.
+    addEventListener('scroll', onScroll, { passive: true });
+    addEventListener('resize', onScroll);
+    visualViewport?.addEventListener('resize', onScroll);
+    const ro = new ResizeObserver(onScroll);
     ro.observe(document.body);
+    document.fonts?.ready.then(onScroll);
+    frame();
     return () => {
-      window.removeEventListener('resize', sync);
-      window.removeEventListener('scroll', sync);
-      window.visualViewport?.removeEventListener('resize', sync);
-      window.visualViewport?.removeEventListener('scroll', sync);
+      removeEventListener('scroll', onScroll);
+      removeEventListener('resize', onScroll);
+      visualViewport?.removeEventListener('resize', onScroll);
       ro.disconnect();
     };
-  }, [reduced]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (reduced) return null;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <motion.div
-      className="celestial"
-      aria-hidden="true"
-      style={{ left, top, width, height, opacity, clipPath: horizonClip }}
-    >
-      <motion.div className="celestial-glow glow-moon" style={{ opacity: moonGlow }} />
-      <motion.div className="celestial-glow glow-sun" style={{ opacity: sunGlow }} />
-      <motion.div className="celestial-disc" style={{ clipPath, backgroundColor }}>
-        <motion.div className="celestial-grad" style={{ opacity: gradOpacity }} />
-        <motion.div className="celestial-shade" style={{ x: shadeX, opacity: shadeOpacity }} />
-      </motion.div>
-    </motion.div>
+    <>
+      <Stars />
+      <div className="shooting" aria-hidden="true" />
+      <div className="dawn" ref={refs.dawn} aria-hidden="true" />
+      <div className="bloom" ref={refs.bloom} aria-hidden="true" />
+      <div className="celestial" ref={refs.cel} aria-hidden="true">
+        <div className="cel-inner">
+          <div className="cel-glow cel-glow--moon" ref={refs.glowMoon} />
+          <div className="cel-glow cel-glow--sun" ref={refs.glowSun} />
+          <div className="cel-disc" ref={refs.disc}>
+            <div className="cel-moon" />
+            <div className="cel-sun" ref={refs.sunFace} />
+            <div className="cel-shade" ref={refs.shade} />
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

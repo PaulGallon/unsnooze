@@ -9,7 +9,6 @@
     "icons": "node scripts/gen-icons.mjs"
   },
   "dependencies": {
-    "framer-motion": "^12.23.0",
     "marked": "^18.0.6",
     "next": "^16.2.0",
     "react": "^19.2.0",

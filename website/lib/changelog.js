@@ -6,11 +6,12 @@ import { marked } from 'marked';
 // build time, cross-checked against the npm registry so only versions that
 // actually shipped to npm appear on the site. A version that's merged and
 // dated but not yet published (e.g. tagged later by CI) stays hidden until
-// the next build after it goes live.
+// revalidation after it goes live (at most five minutes of cached metadata).
 async function npmLatest() {
   try {
     const res = await fetch('https://registry.npmjs.org/unsnooze', {
       headers: { Accept: 'application/vnd.npm.install-v1+json' }, // abbreviated doc
+      next: { revalidate: 300 }, // refresh shipped releases instead of caching an old dist-tag forever
     });
     if (!res.ok) return null;
     const doc = await res.json();

@@ -20,10 +20,10 @@ export const metadata = {
 export default function TroubleshootingDocsPage() {
   return (
     <div className="subpage">
-      <div className="stars-layer stars-dim" aria-hidden="true"><Stars /></div>
+      <Stars dim />
       <JsonLd data={breadcrumbs([['unsnooze', '/'], ['Docs', '/docs/'], ['Troubleshooting', '/docs/troubleshooting/']])} />
       <SiteNav page="docs" />
-      <main className="wrap subpage-main">
+      <main className="wrap subpage-main" id="main">
         <header className="sub-hero">
           <p className="eyebrow">documentation</p>
           <h1 className="sub-title">Troubleshooting and security</h1>
@@ -66,7 +66,7 @@ export default function TroubleshootingDocsPage() {
               <ul>
                 <li><strong>Typing <C>claude</C> starts nothing watched.</strong> The shell
                   wrapper lives in <C>~/.zshrc</C> or <C>~/.bashrc</C> (<C>~/.config/fish/config.fish</C>{' '}
-                  for fish), so it only applies to
+                  for fish, PowerShell's <C>$PROFILE</C> on Windows), so it only applies to
                   shells started after <C>unsnooze setup</C> ran. Open a new terminal, then
                   confirm with <C>unsnooze doctor</C>. Nothing is protected until the wrapper is
                   loaded, because the wrapper is the entry point — you never invoke unsnooze
@@ -142,7 +142,8 @@ export default function TroubleshootingDocsPage() {
                   agent in that pane and start it again. <C>unsnooze logs</C> shows which
                   version each watcher is running from the moment it hands off.</li>
                 <li><strong>The machine was asleep at reset time.</strong> Wakes are dispatched
-                  by the daemon — a launchd agent on macOS, a systemd user unit on Linux. If you
+                  by the daemon — a launchd agent on macOS, a systemd user unit on Linux, an on-demand process on
+                  Windows. If you
                   declined it during setup, nothing runs while the terminal is closed;{' '}
                   <C>doctor</C> reports whether it is running and under which pid.</li>
               </ul>
@@ -159,11 +160,14 @@ export default function TroubleshootingDocsPage() {
                   session is opened instead of typing.</li>
                 <li>Claude's limit menu is read before any key is sent; unreadable → nothing is
                   pressed. It will never select "Upgrade your plan."</li>
-                <li>No <C>--dangerously-skip-permissions</C>, no auto-trust, no auto-approve, no
-                  touching MCP config — your agent's own permission model governs everything after
-                  the wake.</li>
+                <li>No <C>--dangerously-skip-permissions</C>, no auto-approve, no touching MCP
+                  config — unsnooze adds no permission flags of its own (flags you set in{' '}
+                  <C>resumeExtraArgs</C> are yours); your agent's own permission model governs
+                  everything after the wake. Headless Codex revivals pass{' '}
+                  <C>--skip-git-repo-check</C>, since <C>codex exec</C> refuses non-git folders the
+                  session already ran in.</li>
                 <li>Nearly zero network: one daily version check, plus ntfy only if you configure
-                  it. Zero telemetry; state stays in <C>~/.unsnooze</C>.</li>
+                  it. Zero telemetry; state stays owner-only (0700/0600) in <C>~/.unsnooze</C>.</li>
                 <li>Releases are published to npm by CI with provenance.</li>
               </ul>
               <p><strong>Honest limits:</strong> unsnooze does inject keystrokes into your live

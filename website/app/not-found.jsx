@@ -10,9 +10,9 @@ export const metadata = {
 export default function NotFound() {
   return (
     <div className="subpage">
-      <div className="stars-layer stars-dim" aria-hidden="true"><Stars /></div>
+      <Stars dim />
       <SiteNav page="404" />
-      <main className="wrap subpage-main">
+      <main className="wrap subpage-main" id="main">
         <header className="sub-hero">
           <p className="eyebrow">404 <span className="tick">·</span> lost in the dark</p>
           <h1 className="sub-title">This page is still asleep.</h1>

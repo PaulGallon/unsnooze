@@ -1,41 +1,45 @@
 'use client';
 
-import { useState } from 'react';
-import { useScroll, useMotionValueEvent } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import NightClock from './NightClock.jsx';
 
-// Shared top nav. Absolute hrefs — the site lives at the domain root on Vercel.
+// Flush top bar: brand · night-clock readout (home only) · links · progress
+// hairline. Absolute hrefs — the site lives at the domain root.
 export default function SiteNav({ page = 'home' }) {
-  const { scrollY } = useScroll();
   const [scrolled, setScrolled] = useState(false);
-  useMotionValueEvent(scrollY, 'change', (y) => setScrolled(y > 24));
+  useEffect(() => {
+    const on = () => setScrolled(scrollY > 24);
+    on();
+    addEventListener('scroll', on, { passive: true });
+    return () => removeEventListener('scroll', on);
+  }, []);
 
   const home = page === 'home';
+  const cur = (p) => (page === p ? { 'aria-current': 'page', className: 'on' } : {});
 
   return (
-    <div className={`nav-bar${scrolled ? ' scrolled' : ''}`}>
-      <nav className="nav-inner" aria-label="Main">
-        <a className="brand" href={home ? '#top' : '/'}>
-          <span className="prompt">❯</span>unsnooze
-          <span className="zz" aria-hidden="true"><i>z</i><i>z</i><i>z</i></span>
-        </a>
-        <div className="nav-links">
-          {home ? (
-            <>
-              <a href="#why">why</a>
-              <a href="#night">how it works</a>
-              <a href="#agents">agents</a>
-              <a href="#terminals">terminals</a>
-              <a href="#contract">security</a>
-            </>
-          ) : (
-            <a href="/">overview</a>
-          )}
-          <a href="/docs/" className={page === 'docs' ? 'active always' : 'always'}>docs</a>
-          <a href="/changelog/" className={page === 'changelog' ? 'active always' : 'always'}>changelog</a>
-          <a href="/feedback/" className={page === 'feedback' ? 'active always' : 'always'}>feedback</a>
-          <a className="always" href="https://github.com/saaranshM/unsnooze">github</a>
-        </div>
+    <header className={`nav${scrolled ? ' scrolled' : ''}${home ? '' : ' nav--sub'}`}>
+      <a className="brand" href={home ? '#top' : '/'}>
+        <span className="p">❯</span>unsnooze <small>ONE NIGHT</small>
+      </a>
+      {home && <NightClock />}
+      <nav className="nav-links" aria-label="Main">
+        {home ? (
+          <>
+            <a className="sec" href="#why">why</a>
+            <a className="sec" href="#night">how it works</a>
+            <a className="sec" href="#agents">agents</a>
+            <a className="sec" href="#terminals">terminals</a>
+            <a className="sec" href="#contract">security</a>
+          </>
+        ) : (
+          <a className="opt1" href="/">overview</a>
+        )}
+        <a href="/docs/" {...cur('docs')}>docs</a>
+        <a href="/changelog/" {...cur('changelog')} className={`opt2${page === 'changelog' ? ' on' : ''}`}>changelog</a>
+        <a href="/feedback/" {...cur('feedback')} className={`opt2${page === 'feedback' ? ' on' : ''}`}>feedback</a>
+        <a className="gh" href="https://github.com/saaranshM/unsnooze">github</a>
       </nav>
-    </div>
+    </header>
   );
 }

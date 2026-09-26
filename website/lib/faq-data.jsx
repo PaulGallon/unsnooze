@@ -12,10 +12,11 @@ export const FAQ = [
   },
   {
     q: 'What if my laptop was asleep or the terminal was closed?',
-    text: 'Reset times are stored as absolute timestamps and checked every 30 seconds, so a laptop that slept through the reset resumes on the next tick — and dead panes are reopened by session id in a fresh multiplexer pane.',
+    text: 'Reset times are stored as absolute timestamps and checked every 30 seconds, so a laptop that slept through the reset resumes on the next tick — and dead panes are reopened by session id in a fresh multiplexer pane (or a detached process when running headless).',
     jsx: <>Reset times are stored as absolute timestamps and checked every 30 seconds, so a
       laptop that slept through the reset resumes on the next tick — and dead panes are
-      reopened by session id in a fresh multiplexer pane.</>,
+      reopened by session id in a fresh multiplexer pane (or a detached process when running
+      headless).</>,
   },
   {
     q: 'Why did resuming a big session eat so much quota?',
