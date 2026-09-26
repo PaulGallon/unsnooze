@@ -265,7 +265,8 @@ the continued conversation stays visible in the GUI's own history. (Resuming
 *inside* the GUI panel isn't possible today: no extension/app exposes an
 IPC/URI that can send a prompt.)
 
-Enable it in `unsnooze setup` (installs a launchd agent / systemd user unit),
+Enable it in `unsnooze setup` (installs a launchd agent / systemd user unit;
+on Windows the daemon is started on demand instead — see [Windows](#windows)),
 or run `unsnooze install --daemon` / `unsnooze daemon` yourself. Turn it off
 anytime with `unsnooze config set guiWatch off`.
 
@@ -384,7 +385,8 @@ unsnooze config set <k> <v>            # e.g. autoResume off
 unsnooze logs [-f]                     # what unsnooze has been doing
 unsnooze update                        # update unsnooze itself
 unsnooze daemon                        # persistent GUI-session watcher (usually run
-                                       # by launchd/systemd via `install --daemon`)
+                                       # by launchd/systemd via `install --daemon`;
+                                       # on Windows, started on demand)
 unsnooze report [agent]                # capture a pane to report an undetected banner
 unsnooze uninstall [--purge]           # remove wrappers + hooks (+ state with --purge)
 unsnooze help                          # full command list (also -h / --help)
@@ -767,17 +769,26 @@ Windows, WSL is still the better home.
 ### Windows
 
 Native Windows works: PowerShell wrappers, a cmd-safe StopFailure hook, and a
-logon-triggered Scheduled Task for the daemon. Install as usual and run
-`unsnooze doctor` to confirm.
+daemon started on demand. Install as usual and run `unsnooze doctor` to confirm.
 
-Three honest caveats. The daemon is started at logon but not restarted if it
-dies — Task Scheduler is not a supervisor the way launchd and systemd are — so
-after upgrading unsnooze, log out and back in (or run `unsnooze daemon`
-yourself). The daemon also keeps the `PATH` it was born with: an agent whose
-install directory changes on update (the Codex Desktop/Store runtime lives
-under `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>`) can vanish from the daemon's
-view while your shell still finds it — unsnooze looks that directory up at
-launch time, `unsnooze doctor` prints what each agent resolves to, and
+unsnooze registers nothing to run at sign-in on Windows — no Scheduled Task, Run
+key or Startup-folder entry. (Up to 1.19.1 it created a logon Scheduled Task,
+and Microsoft Defender flagged setup as `Trojan:Win32/Commando.A!ml` for it;
+`unsnooze uninstall` removes one left behind.)
+Setup starts the daemon instead, and every agent you launch from PowerShell and
+every Claude Code StopFailure hook starts it again whenever it is not running,
+so after a restart it is back as soon as you use an agent. If you only use the
+Codex app or IDE, nothing you do passes through a wrapper or the hook: run
+`unsnooze install --daemon` after signing in to start it.
+
+Three honest caveats. Nothing supervises the daemon the way launchd and systemd
+do, and a running daemon keeps the code it started with, so after upgrading
+unsnooze re-run `unsnooze install --daemon` (or sign out and back in). The
+daemon also keeps the `PATH` it was born with: an agent whose install directory
+changes on update (the Codex Desktop/Store runtime lives under
+`%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>`) can vanish from the daemon's view
+while your shell still finds it — unsnooze looks that directory up at launch
+time, `unsnooze doctor` prints what each agent resolves to, and
 `UNSNOOZE_CODEX_BIN` (or `UNSNOOZE_CLAUDE_BIN`, …) pins a path; point it at an
 `.exe`, since Node cannot launch a `.cmd` shim directly. And stored-password
 fleet hosts still need Git-for-Windows or WSL `ssh`; native `ssh.exe` requires

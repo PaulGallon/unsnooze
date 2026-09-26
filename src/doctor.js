@@ -20,7 +20,7 @@ import { fishConfigPath } from './fish.js';
 import { listAgents } from './agents/index.js';
 import { getConfig } from './settings.js';
 import { resolveBin } from './which.js';
-import { WINDOWS_TASK_NAME, CLAUDE_DIR, CODEX_DIR } from './config.js';
+import { CLAUDE_DIR, CODEX_DIR } from './config.js';
 
 const log = makeLogger('doctor');
 
@@ -345,12 +345,11 @@ export function agentBinFindings({
 } = {}) {
   const findings = [];
   const envVar = id => `UNSNOOZE_${String(id).toUpperCase()}_BIN`;
-  // Two commands, not `a && b`: && only exists from PowerShell 7, and the
+  // One command, never `a && b`: && only exists from PowerShell 7, and the
   // Windows PowerShell 5.1 that ships with the OS is a supported shell.
   const windowsNote = platform === 'win32'
-    ? `\n  the daemon's Scheduled Task keeps the PATH it had at logon; after an agent update, run\n`
-      + `  schtasks /end /tn ${WINDOWS_TASK_NAME}\n`
-      + `  schtasks /run /tn ${WINDOWS_TASK_NAME}   (or sign out and in)`
+    ? `\n  the daemon keeps the PATH of whatever started it; once this shell finds the agent,\n`
+      + `  restart it from here with: unsnooze install --daemon   (or sign out and back in)`
     : '';
   for (const agent of agents) {
     if (!agent?.id || !enabled(agent.id)) continue;

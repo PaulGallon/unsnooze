@@ -8,7 +8,7 @@
 //     routed a PowerShell `claude` through unsnooze at all;
 //   - processBirth() returned null off darwin/linux, so leases failed closed.
 
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -22,6 +22,8 @@ import {
 } from '../src/install.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // runDoctor's state-permissions check defaults to the real ~/.unsnooze. These
 // tests assert on wrapper findings only, but without a pinned directory the
@@ -180,49 +182,135 @@ test('the default runner is wired up, not just the injected one', () => {
     `expected null or a non-empty path, got ${JSON.stringify(result)}`);
 });
 
-// --- Windows daemon autostart (Scheduled Tasks) ----------------------------
+// --- Windows daemon autostart (on demand, nothing registered) ---------------
+// Up to 1.19.1, setup ran `schtasks /create /f /sc onlogon /tr "node … daemon"`,
+// and Microsoft Defender flagged it as Trojan:Win32/Commando.A!ml: an
+// interpreter running a script out of %APPDATA% at every logon is how malware
+// persists. Setup must never register a logon entry again — the daemon is
+// started now, and on demand afterwards.
 
-test('windows autostart registers a logon-triggered scheduled task', () => {
+const WIN_AUTOSTART_DIR = mkdtempSync(join(tmpdir(), 'unsnooze-windows-autostart-'));
+after(() => rmSync(WIN_AUTOSTART_DIR, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+
+function recorder() {
   const calls = [];
-  const target = installDaemonAutostart({
-    platform: 'win32',
-    activate: (file, args) => { calls.push({ file, args }); return true; },
-  });
-  assert.ok(target, 'win32 must now report an autostart target');
-  assert.equal(calls[0].file, 'schtasks');
-  const args = calls[0].args.join(' ');
-  assert.match(args, /\/create/i);
-  assert.match(args, /\/tn\s+\S*[Uu]nsnooze/);
-  assert.match(args, /\/sc\s+onlogon/i);
-  assert.match(args, /daemon/, 'the task must actually run the daemon');
+  const activate = (file, args) => { calls.push({ file, args }); return false; };
+  return { calls, activate };
+}
+
+test('windows autostart registers nothing with the OS — no Scheduled Task, no Run key', () => {
+  const dir = join(WIN_AUTOSTART_DIR, 'fresh');
+  const { calls, activate } = recorder();
+  let starts = 0;
+  const target = installDaemonAutostart({ platform: 'win32', dir, activate, start: () => { starts++; } });
+  assert.deepEqual(calls, [], 'setup must not run schtasks, reg, or anything else to persist the daemon');
+  assert.equal(starts, 1, 'the daemon is started right away instead');
+  assert.equal(target, join(dir, 'daemon-on-demand'));
+  assert.match(readFileSync(target, 'utf-8'), /started on demand/,
+    'the marker says what it is to anyone who finds it');
 });
 
-test('windows autostart replaces an existing task instead of erroring on it', () => {
-  const calls = [];
-  installDaemonAutostart({
-    platform: 'win32',
-    activate: (file, args) => { calls.push(args.join(' ')); return true; },
-  });
-  assert.ok(calls.some(a => /\/f\b/.test(a)),
-    're-running setup must overwrite the task, not fail on "already exists"');
+test('re-running windows setup rewrites the marker and restarts the daemon', () => {
+  // A running daemon keeps the code and PATH it started with; re-running setup
+  // is how a user hands it new ones, as launchctl unload+load does on macOS.
+  const dir = join(WIN_AUTOSTART_DIR, 'rerun');
+  let starts = 0;
+  const start = () => { starts++; };
+  installDaemonAutostart({ platform: 'win32', dir, activate: () => true, start });
+  installDaemonAutostart({ platform: 'win32', dir, activate: () => true, start });
+  assert.equal(starts, 2);
+  assert.deepEqual(readdirSync(dir), ['daemon-on-demand']);
 });
 
-test('uninstall removes the scheduled task', () => {
-  const calls = [];
-  const target = uninstallDaemonAutostart({
-    platform: 'win32',
-    activate: (file, args) => { calls.push({ file, args }); return true; },
-  });
-  assert.ok(target);
-  assert.equal(calls[0].file, 'schtasks');
-  assert.match(calls[0].args.join(' '), /\/delete/i);
-  assert.match(calls[0].args.join(' '), /\/f\b/, 'delete must not prompt');
+test('the real starter never runs for a marker outside the live location', () => {
+  // The unit platforms' interlock, carried over: the default starter restarts
+  // the daemon the live marker describes, so a fixture written elsewhere must
+  // not bounce the user's real one. Writing still works; only the start is
+  // withheld.
+  const dir = join(WIN_AUTOSTART_DIR, 'interlock');
+  const target = installDaemonAutostart({ platform: 'win32', dir, activate: () => true });
+  assert.ok(existsSync(target), 'the marker is still written');
+
+  // An injected starter is always honored — that is a caller stating intent,
+  // and it is how every other test drives this code.
+  let starts = 0;
+  installDaemonAutostart({ platform: 'win32', dir, start: () => { starts++; } });
+  assert.equal(starts, 1, 'injected starters still run');
 });
 
-test('a scheduled task is not a supervisor, so the daemon must never exit into it', () => {
-  // launchd KeepAlive and systemd Restart=always bring the daemon back; a
-  // logon-triggered task does not. isSupervised() gates the version-skew exit,
-  // so answering true here would stop Windows watching until the next logon.
+test('windows uninstall removes the marker and stops the daemon', () => {
+  const dir = join(WIN_AUTOSTART_DIR, 'uninstall');
+  installDaemonAutostart({ platform: 'win32', dir, activate: () => true, start: () => {} });
+  const { calls, activate } = recorder();   // no legacy task: every query fails
+  let stops = 0;
+  const removed = uninstallDaemonAutostart({ platform: 'win32', dir, activate, stop: () => { stops++; } });
+  assert.equal(removed, join(dir, 'daemon-on-demand'));
+  assert.ok(!existsSync(join(dir, 'daemon-on-demand')));
+  assert.equal(stops, 1);
+  assert.deepEqual(calls.map(c => [c.file, ...c.args]), [['schtasks', '/query', '/tn', 'unsnooze']],
+    'a machine without the old task sees a read-only query, never a delete');
+});
+
+test('windows uninstall deletes a Scheduled Task left by 1.19.1 or earlier', () => {
+  const dir = join(WIN_AUTOSTART_DIR, 'legacy');
+  const calls = [];
+  const removed = uninstallDaemonAutostart({
+    platform: 'win32', dir, stop: () => {},
+    activate: (file, args) => { calls.push([file, ...args]); return true; },
+  });
+  assert.deepEqual(calls, [
+    ['schtasks', '/query', '/tn', 'unsnooze'],
+    ['schtasks', '/delete', '/f', '/tn', 'unsnooze'],
+  ], 'delete must not prompt');
+  assert.equal(removed, 'Scheduled Task \\unsnooze');
+});
+
+test('windows uninstall says how to delete an old task it could not', () => {
+  // A task created from an elevated shell can need one to delete it.
+  const dir = join(WIN_AUTOSTART_DIR, 'stuck');
+  const said = [];
+  const removed = uninstallDaemonAutostart({
+    platform: 'win32', dir, stop: () => {}, say: m => said.push(m),
+    activate: (file, args) => args[0] === '/query',   // it exists; the delete is refused
+  });
+  assert.equal(removed, null, 'not reported as removed');
+  assert.equal(said.length, 1);
+  assert.match(said[0], /administrator/);
+  assert.match(said[0], /schtasks \/delete \/tn unsnooze \/f/);
+});
+
+test('windows uninstall with nothing installed reports nothing removed', () => {
+  const dir = join(WIN_AUTOSTART_DIR, 'nothing');
+  assert.equal(uninstallDaemonAutostart({ platform: 'win32', dir, activate: () => false, stop: () => {} }), null);
+});
+
+test('no source file creates a Scheduled Task or another logon entry', () => {
+  // A tripwire for the Defender detection: whatever else changes, nothing in
+  // src/ may hand schtasks a /create or write a Run key or the Startup folder.
+  const srcDir = fileURLToPath(new URL('../src/', import.meta.url));
+  const offenders = [];
+  const walk = d => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith('.js')) {
+        const code = readFileSync(p, 'utf-8');
+        if (/['"]schtasks(?:\.exe)?['"]\s*,\s*\[\s*['"]\/create['"]/i.test(code)
+          || /Register-ScheduledTask/i.test(code)
+          || /CurrentVersion\\\\Run\b/i.test(code)
+          || /Start Menu\\\\Programs\\\\Startup/i.test(code)) offenders.push(p);
+      }
+    }
+  };
+  walk(srcDir);
+  assert.deepEqual(offenders, []);
+});
+
+test('nothing supervises the Windows daemon, so it must never exit into nothing', () => {
+  // launchd KeepAlive and systemd Restart=always bring the daemon back; on
+  // Windows only the next wrapped launch or hook does, which may be hours
+  // away. isSupervised() gates the version-skew exit, so answering true here
+  // would stop Windows watching until then.
   assert.equal(isSupervised({ platform: 'win32', env: {} }), false);
   assert.equal(isSupervised({ platform: 'win32', env: { INVOCATION_ID: 'x' } }), false);
 });
