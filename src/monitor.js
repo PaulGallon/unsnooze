@@ -18,6 +18,7 @@ import {
 } from './config.js';
 import { detectLimit, isBusy, overloadMatch, modelRemedy } from './patterns.js';
 import { getAgent } from './agents/index.js';
+import { pendingCodexPrompt } from './agents/codex.js';
 import { getConfig } from './settings.js';
 import { notify } from './notify.js';
 import { parseResetTime, resetAtMs, sourceRank } from './time-parser.js';
@@ -327,6 +328,16 @@ export function createMonitor({
     const visible = mux.capturePaneVisible
       ? await mux.capturePaneVisible(pane).catch(() => '')
       : text;
+    if (agent.id === 'codex' && Object.values(readState().sessions).some(rec =>
+      rec.agent === 'codex' && rec.mux === muxName && rec.pane === pane
+      && rec.paneOwner === paneOwner && (rec.leaseId ?? null) === leaseId
+      && ['resuming', 'failed'].includes(rec.status)
+      && pendingCodexPrompt(visible, rec.pendingPrompt))) {
+      // The resumer owns this unsubmitted draft. Its old banner is not a new
+      // stop; refreshing detectedAt here would invalidate the submit retry.
+      firstTick = false;
+      return;
+    }
     if (agent.menu && agent.menu.isPrompt(visible, PANE_SCAN_LINES)) {
       if (!getConfig('menuAutoAnswer')) {
         // Watch-only mode: record the stop (reset time may not be visible

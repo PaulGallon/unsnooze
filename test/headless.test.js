@@ -90,7 +90,10 @@ test('newWindow tees output to a per-session log so an unattended run is readabl
   });
 
   const log = join(dir, 'unsnooze-log.log');
-  await new Promise(resolve => setTimeout(resolve, 300));
+  const deadline = Date.now() + 5000;
+  while ((!existsSync(log) || !readFileSync(log, 'utf-8').includes('hello from headless')) && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
   assert.ok(existsSync(log), 'log file should be created');
   assert.match(readFileSync(log, 'utf-8'), /hello from headless/);
 });

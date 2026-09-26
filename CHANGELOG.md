@@ -5,6 +5,16 @@
 Setup on Windows no longer creates a Scheduled Task. That task is what
 Microsoft Defender flagged as a Trojan.
 
+### Codex wake recovery
+
+- Team/business stops with a null credits balance now retain the exhausted
+  five-hour window's reset instead of being held as a workspace credit wall.
+- If Codex consumes Enter as a pasted newline, verification retries Enter
+  up to three times while the exact wake prompt remains in the composer.
+  Each retry rechecks pane ownership and agent liveness. The old banner is
+  not re-recorded as a new stop, and the wake text is never pasted twice.
+  An unconfirmed submission is left visible for manual inspection.
+
 ### No Scheduled Task on Windows
 
 A user reported that Microsoft Defender flagged `unsnooze setup` as
