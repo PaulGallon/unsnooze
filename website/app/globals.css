@@ -467,7 +467,7 @@ table.compare { width: 100%; min-width: 720px; border-collapse: collapse; font-s
 }
 .statement .ln { display: block; }
 .closing__line { margin-top: var(--space-lg); max-width: 46ch; color: var(--ink-2); font-size: clamp(1.02rem, 1.4vw, 1.2rem); }
-.closing__cta { margin-top: var(--space-xl); display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--space-md) var(--space-xl); }
+.closing__cta { margin-top: var(--space-xl); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: var(--space-md) var(--space-xl); }
 .ghost-link { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink); text-decoration: none; padding: 10px 2px; border-bottom: 1px solid color-mix(in oklch, var(--accent) 45%, transparent); transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
 .ghost-link span { display: inline-block; transition: transform var(--dur-base) var(--ease-out); }
 .ghost-link:hover { color: var(--accent); border-color: var(--accent); }
@@ -510,6 +510,12 @@ table.compare { width: 100%; min-width: 720px; border-collapse: collapse; font-s
   opacity: calc(var(--sun) * .55); will-change: opacity;
 }
 .static-sun { display: none; }
+
+/* Keep the sun above a compact footer, without a second empty horizon. */
+.site-foot .foot { margin-top: var(--space-lg); padding-top: 0; }
+.site-foot .foot__row { justify-content: center; gap: var(--space-sm); padding-top: 0; border-top: 0; }
+.site-foot .foot-links { justify-content: center; gap: 6px 18px; }
+.site-foot .signoff { margin-top: var(--space-lg); }
 
 /* ── responsive ──────────────────────────────────────── */
 @media (max-width: 960px) {
