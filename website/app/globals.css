@@ -511,6 +511,12 @@ table.compare { width: 100%; min-width: 720px; border-collapse: collapse; font-s
 }
 .static-sun { display: none; }
 
+/* Keep the sun above a compact footer, without a second empty horizon. */
+.site-foot .foot { margin-top: var(--space-lg); padding-top: 0; }
+.site-foot .foot__row { justify-content: center; gap: var(--space-sm); padding-top: 0; border-top: 0; }
+.site-foot .foot-links { justify-content: center; gap: 6px 18px; }
+.site-foot .signoff { margin-top: var(--space-lg); }
+
 /* ── responsive ──────────────────────────────────────── */
 @media (max-width: 960px) {
   .strip__row { grid-template-columns: repeat(2, 1fr); }
@@ -531,11 +537,6 @@ table.compare { width: 100%; min-width: 720px; border-collapse: collapse; font-s
   .head--end .poster-h { margin-left: 0; }
 }
 @media (max-width: 640px) {
-  /* Keep the sun above a compact footer, without a second empty horizon. */
-  .site-foot .foot { margin-top: var(--space-lg); padding-top: 0; }
-  .site-foot .foot__row { justify-content: center; gap: var(--space-sm); padding-top: 0; border-top: 0; }
-  .site-foot .foot-links { justify-content: center; gap: 6px 18px; }
-  .site-foot .signoff { margin-top: var(--space-lg); }
   section.poster { padding-top: var(--space-3xl); }
   .hero { padding-top: 6.5rem; }
   .hero h1 { font-size: calc(12.2vw * var(--display-scale)); letter-spacing: calc(-0.05em * var(--display-tracking)); }
