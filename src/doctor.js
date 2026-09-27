@@ -238,7 +238,7 @@ export async function runDoctor({
     });
   }
 
-  if (!hookInstalled()) {
+  if (enabled('claude') && !hookInstalled()) {
     findings.push({
       id: 'hook-missing', kind: 'health',
       title: 'Claude StopFailure hook is not installed',

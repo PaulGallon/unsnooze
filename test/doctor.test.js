@@ -202,6 +202,19 @@ test('runDoctor flags missing hook / wrappers / multiplexer as health problems',
   assert.equal(report.healthy, false);
 });
 
+test('runDoctor does not require the Claude hook when Claude is disabled', async () => {
+  const report = await runDoctor({
+    runner: () => ({ status: 0, stdout: '' }),
+    launchAgentsDir: join(DIR, 'nope'),
+    csgStateDir: join(DIR, 'nope'),
+    csgBinPath: null,
+    hookInstalled: () => false,
+    wrappersInstalled: () => true,
+    enabled: id => id === 'codex',
+  });
+  assert.ok(!report.findings.some(f => f.id === 'hook-missing'));
+});
+
 // --- fixes ----------------------------------------------------------------------
 
 test('applyFixes kills csg processes, unloads+removes units, archives the state dir', async () => {
