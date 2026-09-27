@@ -33,7 +33,7 @@ test('darwin uses osascript with escaped strings', () => {
 
 test('linux uses notify-send', () => {
   const calls = [];
-  notify('Resumed', 'all good', { platform: 'linux', spawner: (cmd, args) => calls.push({ cmd, args }) });
+  notify('Resumed', 'all good', { platform: 'linux', wsl: false, spawner: (cmd, args) => calls.push({ cmd, args }) });
   assert.equal(calls[0].cmd, 'notify-send');
   assert.deepEqual(calls[0].args.slice(-2), ['Resumed', 'all good']);
 });
