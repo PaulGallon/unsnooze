@@ -220,7 +220,10 @@ export function findT3Cli(home = t3Home()) {
   const root = join(home, 'wsl-runtime');
   try {
     const candidates = readdirSync(root)
-      .map(name => join(root, name, 'apps', 'server', 'dist', 'bin.mjs'))
+      .flatMap(name => [
+        join(root, name, 't3'),
+        join(root, name, 'apps', 'server', 'dist', 'bin.mjs'),
+      ])
       .filter(existsSync)
       .map(path => ({ path, mtime: statSync(path).mtimeMs }))
       .sort((a, b) => b.mtime - a.mtime);
@@ -255,8 +258,10 @@ export async function cmdT3(args = []) {
   }
   // Pairing output contains a one-time credential. Keep it in memory, exchange
   // it immediately for a narrowly-scoped access token, and never print it.
-  const paired = spawnSync(process.execPath, [cli, 'pair', '--base-dir', t3Home(),
-    '--ttl', '90d', '--label', 'unsnooze'], { encoding: 'utf8', timeout: 15_000 });
+  const pairArgs = ['pair', '--base-dir', t3Home(), '--ttl', '90d', '--label', 'unsnooze'];
+  const paired = cli.endsWith('.mjs')
+    ? spawnSync(process.execPath, [cli, ...pairArgs], { encoding: 'utf8', timeout: 15_000 })
+    : spawnSync(cli, pairArgs, { encoding: 'utf8', timeout: 15_000 });
   if (paired.error || paired.status !== 0) {
     console.error(`unsnooze: could not pair with T3 Code: ${paired.error?.message || paired.stderr?.trim() || `exit ${paired.status}`}`);
     return 1;

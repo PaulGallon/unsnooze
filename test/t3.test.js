@@ -1,15 +1,27 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const DIR = mkdtempSync(join(tmpdir(), 'unsnooze-t3-test-'));
 process.env.UNSNOOZE_STATE_DIR = join(DIR, 'unsnooze');
-const { findT3Thread, exchangeT3PairingToken, t3Rpc, sendT3Wake } = await import('../src/t3.js');
+const { findT3Thread, findT3Cli, exchangeT3PairingToken, t3Rpc, sendT3Wake } = await import('../src/t3.js');
 
 after(() => rmSync(DIR, { recursive: true, force: true }));
+
+test('finds the current T3 WSL executable ahead of an older JavaScript CLI', () => {
+  const home = join(DIR, 'cli-home');
+  const oldCli = join(home, 'wsl-runtime', 'old', 'apps', 'server', 'dist', 'bin.mjs');
+  const newCli = join(home, 'wsl-runtime', 'new', 't3');
+  mkdirSync(join(home, 'wsl-runtime', 'old', 'apps', 'server', 'dist'), { recursive: true });
+  mkdirSync(join(home, 'wsl-runtime', 'new'), { recursive: true });
+  writeFileSync(oldCli, '');
+  writeFileSync(newCli, '');
+  utimesSync(oldCli, 1, 1);
+  assert.equal(findT3Cli(home), newCli);
+});
 
 test('maps a Codex rollout to its owning T3 thread from structured provider events', () => {
   const home = join(DIR, 't3');
